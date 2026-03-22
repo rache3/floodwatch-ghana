@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flood Risk Assessment Map — Greater Accra Region</title>
+
+  <!-- MapLibre GL JS -->
+  <link href="https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e8e6de;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 12px 20px;
+      background: #1a1d26;
+      border-bottom: 1px solid #2a2d3a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 500;
+      color: #e8e6de;
+    }
+
+    header .meta {
+      font-size: 12px;
+      color: #7a7870;
+    }
+
+    #map { flex: 1; }
+
+    /* Legend */
+    .legend {
+      position: absolute;
+      bottom: 32px;
+      right: 12px;
+      background: rgba(26, 29, 38, 0.92);
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      padding: 14px 16px;
+      min-width: 180px;
+      backdrop-filter: blur(4px);
+    }
+
+    .legend h3 {
+      font-size: 12px;
+      font-weight: 500;
+      color: #b8b6ae;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .legend-bar {
+      width: 100%;
+      height: 12px;
+      border-radius: 4px;
+      background: linear-gradient(to right, #0d0887, #6a00a8, #b12a90, #e16462, #fca636, #f0f921);
+      margin-bottom: 4px;
+    }
+
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #7a7870;
+    }
+
+    /* Layer toggles */
+    .controls {
+      position: absolute;
+      top: 70px;
+      left: 12px;
+      background: rgba(26, 29, 38, 0.92);
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      padding: 12px 14px;
+      backdrop-filter: blur(4px);
+    }
+
+    .controls h3 {
+      font-size: 11px;
+      font-weight: 500;
+      color: #b8b6ae;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: #c8c6be;
+      cursor: pointer;
+    }
+
+    .toggle-row input[type="checkbox"] { cursor: pointer; }
+
+    /* Opacity slider */
+    .opacity-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #7a7870;
+    }
+
+    .opacity-row input[type="range"] {
+      flex: 1;
+      accent-color: #7a6de8;
+    }
+
+    /* Popup */
+    .maplibregl-popup-content {
+      background: #1a1d26;
+      color: #e8e6de;
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      font-size: 13px;
+      padding: 10px 14px;
+    }
+
+    .maplibregl-popup-tip { border-top-color: #1a1d26; }
+
+    .risk-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+      font-size: 12px;
+    }
+    .risk-high   { background: #7c1d1d; color: #fca5a5; }
+    .risk-medium { background: #78350f; color: #fcd34d; }
+    .risk-low    { background: #14532d; color: #86efac; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Flood Risk Assessment — Greater Accra Region</h1>
+  <span class="meta">Data: GEE · Copernicus DEM · ERA5 | Author: Rachel Atia</span>
+</header>
+
+<div id="map"></div>
+
+<!-- Layer controls -->
+<div class="controls">
+  <h3>Layers</h3>
+  <label class="toggle-row">
+    <input type="checkbox" id="toggle-risk" checked />
+    Flood risk score
+  </label>
+  <label class="toggle-row">
+    <input type="checkbox" id="toggle-boundaries" checked />
+    District boundaries
+  </label>
+  <div class="opacity-row">
+    <span>Opacity</span>
+    <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.8" />
+    <span id="opacity-val">80%</span>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <h3>Flood Risk Score</h3>
+  <div class="legend-bar"></div>
+  <div class="legend-labels">
+    <span>Low (0)</span>
+    <span>High (1)</span>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG — update these after deploying your services
+// ─────────────────────────────────────────────────────────────────────────────
+const TITILER_URL  = "https://YOUR-TITILER-SERVICE-URL.run.app";  // Cloud Run URL
+const R2_PUBLIC    = "https://pub-YOURPUBID.r2.dev";               // R2 public URL
+const COG_URL      = `${R2_PUBLIC}/rasters/flood_risk_map.cog.tif`;
+const GEOJSON_URL  = `${R2_PUBLIC}/vectors/gadm41_GHA_2.json`;
+
+// XYZ tile URL via TiTiler
+const TILE_URL = `${TITILER_URL}/cog/tiles/{z}/{x}/{y}` +
+  `?url=${encodeURIComponent(COG_URL)}` +
+  `&colormap_name=plasma` +
+  `&rescale=0,1`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Map
+// ─────────────────────────────────────────────────────────────────────────────
+const map = new maplibregl.Map({
+  container: "map",
+  style: {
+    version: 8,
+    sources: {
+      "osm": {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "© OpenStreetMap contributors",
+      }
+    },
+    layers: [{ id: "osm", type: "raster", source: "osm", paint: { "raster-opacity": 0.35 } }],
+  },
+  center: [0.10, 5.78],   // Greater Accra centroid
+  zoom: 8,
+  maxZoom: 14,
+});
+
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+map.on("load", () => {
+
+  // ── Flood risk raster tiles ──────────────────────────────────────────────
+  map.addSource("flood-risk", {
+    type: "raster",
+    tiles: [TILE_URL],
+    tileSize: 256,
+  });
+
+  map.addLayer({
+    id: "flood-risk-layer",
+    type: "raster",
+    source: "flood-risk",
+    paint: { "raster-opacity": 0.8 },
+  });
+
+  // ── District boundaries (GeoJSON from R2) ───────────────────────────────
+  map.addSource("boundaries", {
+    type: "geojson",
+    data: GEOJSON_URL,
+  });
+
+  map.addLayer({
+    id: "boundaries-line",
+    type: "line",
+    source: "boundaries",
+    paint: {
+      "line-color": "#ffffff",
+      "line-width": 0.6,
+      "line-opacity": 0.5,
+    },
+  });
+
+  map.addLayer({
+    id: "boundaries-fill",
+    type: "fill",
+    source: "boundaries",
+    paint: { "fill-color": "transparent" },
+  });
+
+  // ── Click popup ──────────────────────────────────────────────────────────
+  map.on("click", "boundaries-fill", (e) => {
+    const props = e.features[0].properties;
+    const districtName = props.NAME_2 || props.NAME_1 || "Unknown district";
+
+    // Estimate pixel risk from map (simplified — for precise values query
+    // the TiTiler /statistics endpoint with the district geometry)
+    const popup = new maplibregl.Popup({ offset: 8 })
+      .setLngLat(e.lngLat)
+      .setHTML(`
+        <strong>${districtName}</strong><br/>
+        <span style="color:#7a7870;font-size:11px">${props.GID_1 || ""}</span><br/><br/>
+        <a href="${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}"
+           target="_blank"
+           style="color:#7a6de8;font-size:12px">
+          View statistics ↗
+        </a>
+      `)
+      .addTo(map);
+  });
+
+  map.on("mouseenter", "boundaries-fill", () => {
+    map.getCanvas().style.cursor = "pointer";
+  });
+  map.on("mouseleave", "boundaries-fill", () => {
+    map.getCanvas().style.cursor = "";
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Controls
+// ─────────────────────────────────────────────────────────────────────────────
+document.getElementById("toggle-risk").addEventListener("change", (e) => {
+  map.setLayoutProperty("flood-risk-layer", "visibility", e.target.checked ? "visible" : "none");
+});
+
+document.getElementById("toggle-boundaries").addEventListener("change", (e) => {
+  const v = e.target.checked ? "visible" : "none";
+  map.setLayoutProperty("boundaries-line", "visibility", v);
+  map.setLayoutProperty("boundaries-fill", "visibility", v);
+});
+
+document.getElementById("opacity").addEventListener("input", (e) => {
+  const val = parseFloat(e.target.value);
+  map.setPaintProperty("flood-risk-layer", "raster-opacity", val);
+  document.getElementById("opacity-val").textContent = Math.round(val * 100) + "%";
+});
+</script>
+</body>
+</html>

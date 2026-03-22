@@ -1,0 +1,109 @@
+# Flood Risk Pipeline — GitHub Actions Workflow
+# Runs monthly (or on-demand) and orchestrates the full pipeline:
+#   1. Build & push Docker image to GCR
+#   2. Trigger Cloud Run job to process data
+#   3. Upload outputs to Cloudflare R2
+
+name: Flood Risk Pipeline
+
+on:
+  # Run on the 1st of every month at 06:00 UTC
+  schedule:
+    - cron: "0 6 1 * *"
+  # Allow manual trigger from the GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Year for rainfall data (e.g. 2024)"
+        required: false
+        default: "2024"
+      month:
+        description: "Month for rainfall data (1-12)"
+        required: false
+        default: "6"
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/flood-risk-pipeline
+  JOB_NAME: flood-risk-job
+
+jobs:
+  # ── Job 1: Build and push the Docker image ─────────────────────────────
+  build:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker --quiet
+
+      - name: Generate image tag
+        id: tag
+        run: echo "tag=$(date +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        run: |
+          docker build -f docker/Dockerfile -t $IMAGE:${{ steps.tag.outputs.tag }} -t $IMAGE:latest .
+          docker push $IMAGE:${{ steps.tag.outputs.tag }}
+          docker push $IMAGE:latest
+
+  # ── Job 2: Run the Cloud Run job ────────────────────────────────────────
+  process:
+    name: Process & upload
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Create or update Cloud Run job
+        run: |
+          gcloud run jobs create $JOB_NAME \
+            --image=$IMAGE:latest \
+            --region=$REGION \
+            --memory=2Gi \
+            --cpu=2 \
+            --max-retries=1 \
+            --task-timeout=30m \
+            --set-env-vars="DATA_DIR=/app/data,OUTPUT_DIR=/app/output" \
+            --set-secrets="R2_ACCOUNT_ID=r2-account-id:latest,R2_ACCESS_KEY=r2-access-key:latest,R2_SECRET_KEY=r2-secret-key:latest,R2_BUCKET=r2-bucket:latest" \
+            --project=$PROJECT_ID \
+          || gcloud run jobs update $JOB_NAME \
+            --image=$IMAGE:latest \
+            --region=$REGION \
+            --project=$PROJECT_ID
+
+      - name: Execute Cloud Run job
+        run: |
+          gcloud run jobs execute $JOB_NAME \
+            --region=$REGION \
+            --project=$PROJECT_ID \
+            --wait
+
+      - name: Notify on success
+        if: success()
+        run: echo "Pipeline completed successfully at $(date)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Pipeline FAILED at $(date). Check Cloud Run logs." >> $GITHUB_STEP_SUMMARY
