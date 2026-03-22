@@ -24,7 +24,7 @@ https://github.com/rache3/flood-risk-mapping-greater-accra/blob/main/Flood%20Ris
 - DEM reveals flood-prone gradients that align with urban sprawl patterns.
 
 ## Author
-Rachel Atia | Data Analyst & GIS Specialist | AWS Cloud Engineer Trainee
+Rachel Atia | GIS Analyst | Cloud Developer (AWS Certified)
 Ghana
 
 ## Want to explore?
