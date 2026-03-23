@@ -7,10 +7,8 @@
 name: Flood Risk Pipeline
 
 on:
-  # Run on the 1st of every month at 06:00 UTC
   schedule:
     - cron: "0 6 1 * *"
-  # Allow manual trigger from the GitHub Actions UI
   workflow_dispatch:
     inputs:
       year:
@@ -23,16 +21,20 @@ on:
         default: "6"
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  PROJECT_ID: project-a93d8eb8-d695-49f7-857
   REGION: us-central1
-  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/flood-risk-pipeline
+  IMAGE: gcr.io/project-a93d8eb8-d695-49f7-857/flood-risk-pipeline
   JOB_NAME: flood-risk-job
+  WORKLOAD_IDENTITY_PROVIDER: projects/244163528833/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  SERVICE_ACCOUNT: github-pipeline@project-a93d8eb8-d695-49f7-857.iam.gserviceaccount.com
 
 jobs:
-  # ── Job 1: Build and push the Docker image ─────────────────────────────
   build:
     name: Build & push image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
 
@@ -43,7 +45,8 @@ jobs:
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -61,17 +64,20 @@ jobs:
           docker push $IMAGE:${{ steps.tag.outputs.tag }}
           docker push $IMAGE:latest
 
-  # ── Job 2: Run the Cloud Run job ────────────────────────────────────────
   process:
     name: Process & upload
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -85,8 +91,7 @@ jobs:
             --cpu=2 \
             --max-retries=1 \
             --task-timeout=30m \
-            --set-env-vars="DATA_DIR=/app/data,OUTPUT_DIR=/app/output" \
-            --set-secrets="R2_ACCOUNT_ID=r2-account-id:latest,R2_ACCESS_KEY=r2-access-key:latest,R2_SECRET_KEY=r2-secret-key:latest,R2_BUCKET=r2-bucket:latest" \
+            --set-env-vars="DATA_DIR=/app/data,OUTPUT_DIR=/app/output,GCS_BUCKET=accra-flood-risk" \
             --project=$PROJECT_ID \
           || gcloud run jobs update $JOB_NAME \
             --image=$IMAGE:latest \
@@ -102,8 +107,8 @@ jobs:
 
       - name: Notify on success
         if: success()
-        run: echo "Pipeline completed successfully at $(date)" >> $GITHUB_STEP_SUMMARY
+        run: echo "✅ Pipeline completed successfully at $(date)" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify on failure
         if: failure()
-        run: echo "Pipeline FAILED at $(date). Check Cloud Run logs." >> $GITHUB_STEP_SUMMARY
+        run: echo "❌ Pipeline FAILED at $(date). Check Cloud Run logs." >> $GITHUB_STEP_SUMMARY
