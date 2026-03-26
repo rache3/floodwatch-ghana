@@ -1,19 +1,12 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gdal-bin \
-    libgdal-dev \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
-COPY docker/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+    titiler.core==0.16.0 \
+    uvicorn==0.27.1 \
+    fastapi==0.110.0
 
-COPY scripts/ ./scripts/
+COPY titiler/main.py .
 
-RUN mkdir -p data output
-
-CMD ["python", "-u", "scripts/flood_risk.py"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
