@@ -252,14 +252,14 @@ map.on("load", () => {
     data: GEOJSON_URL,
   });
 
-  map.addLayer({
+ map.addLayer({
     id: "boundaries-line",
     type: "line",
     source: "boundaries",
     paint: {
       "line-color": "#ffffff",
-      "line-width": 0.6,
-      "line-opacity": 0.5,
+      "line-width": 1.5,
+      "line-opacity": 0.9,
     },
   });
 
