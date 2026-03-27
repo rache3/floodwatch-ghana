@@ -270,26 +270,92 @@ map.on("load", () => {
     paint: { "fill-color": "transparent" },
   });
 
-  // ── Click popup ──────────────────────────────────────────────────────────
-  map.on("click", "boundaries-fill", (e) => {
-    const props = e.features[0].properties;
-    const districtName = props.NAME_2 || props.NAME_1 || "Unknown district";
-
-    // Estimate pixel risk from map (simplified — for precise values query
-    // the TiTiler /statistics endpoint with the district geometry)
-    const popup = new maplibregl.Popup({ offset: 8 })
-      .setLngLat(e.lngLat)
-      .setHTML(`
-        <strong>${districtName}</strong><br/>
-        <span style="color:#7a7870;font-size:11px">${props.GID_1 || ""}</span><br/><br/>
-        <a href="${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}"
-           target="_blank"
-           style="color:#7a6de8;font-size:12px">
-          View statistics ↗
-        </a>
-      `)
-      .addTo(map);
+  map.addLayer({
+    id: "boundaries-labels",
+    type: "symbol",
+    source: "boundaries",
+    layout: {
+      "text-field": ["get", "NAME_2"],
+      "text-size": 11,
+      "text-anchor": "center",
+      "text-max-width": 8,
+    },
+    paint: {
+      "text-color": "#ffffff",
+      "text-halo-color": "#000000",
+      "text-halo-width": 1.5,
+    },
   });
+
+  // ── Click popup ──────────────────────────────────────────────────────────
+  map.on("click", "boundaries-fill", async (e) => {
+  const props = e.features[0].properties;
+  const name = props.NAME_2 || props.NAME_1 || "Unknown";
+
+  // Show loading popup first
+  const popup = new maplibregl.Popup({ offset: 8, maxWidth: "280px" })
+    .setLngLat(e.lngLat)
+    .setHTML(`
+      <strong>${name}</strong><br/>
+      <span style="color:#7a7870;font-size:11px">Loading statistics...</span>
+    `)
+    .addTo(map);
+
+  // Fetch statistics from TiTiler
+  try {
+    const res = await fetch(
+      `${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}`
+    );
+    const data = await res.json();
+    const s = data.b1;
+
+    const riskLevel = s.mean > 0.7 ? "High" : s.mean > 0.4 ? "Moderate" : "Low";
+    const riskColor = s.mean > 0.7 ? "#fca5a5" : s.mean > 0.4 ? "#fcd34d" : "#86efac";
+    const riskBg    = s.mean > 0.7 ? "#7c1d1d" : s.mean > 0.4 ? "#78350f" : "#14532d";
+
+    popup.setHTML(`
+      <div style="font-family:sans-serif;min-width:220px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">${name}</div>
+        <div style="margin-bottom:8px">
+          <span style="background:${riskBg};color:${riskColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">
+            ${riskLevel} Risk
+          </span>
+        </div>
+        <table style="width:100%;font-size:12px;border-collapse:collapse">
+          <tr><td style="color:#7a7870;padding:2px 0">Mean risk score</td>
+              <td style="text-align:right;font-weight:600">${s.mean.toFixed(3)}</td></tr>
+          <tr><td style="color:#7a7870;padding:2px 0">Max risk score</td>
+              <td style="text-align:right">${s.max.toFixed(3)}</td></tr>
+          <tr><td style="color:#7a7870;padding:2px 0">Median</td>
+              <td style="text-align:right">${s.median.toFixed(3)}</td></tr>
+          <tr><td style="color:#7a7870;padding:2px 0">Std deviation</td>
+              <td style="text-align:right">${s.std.toFixed(3)}</td></tr>
+          <tr><td style="color:#7a7870;padding:2px 0">Valid pixels</td>
+              <td style="text-align:right">${s.valid_percent.toFixed(1)}%</td></tr>
+        </table>
+        <div style="margin-top:8px">
+          <div style="font-size:11px;color:#7a7870;margin-bottom:3px">Risk distribution</div>
+          <div style="display:flex;align-items:flex-end;gap:1px;height:30px">
+            ${s.histogram[0].map((count, i) => {
+              const maxCount = Math.max(...s.histogram[0]);
+              const height = Math.round((count / maxCount) * 30);
+              const hue = Math.round(i * 27);
+              return `<div style="flex:1;height:${height}px;background:hsl(${hue},80%,55%);border-radius:1px 1px 0 0"></div>`;
+            }).join('')}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#7a7870;margin-top:2px">
+            <span>Low</span><span>High</span>
+          </div>
+        </div>
+      </div>
+    `);
+  } catch (err) {
+    popup.setHTML(`
+      <strong>${name}</strong><br/>
+      <span style="color:#7a7870;font-size:11px">Statistics unavailable</span>
+    `);
+  }
+});
 
   map.on("mouseenter", "boundaries-fill", () => {
     map.getCanvas().style.cursor = "pointer";
@@ -310,6 +376,7 @@ document.getElementById("toggle-boundaries").addEventListener("change", (e) => {
   const v = e.target.checked ? "visible" : "none";
   map.setLayoutProperty("boundaries-line", "visibility", v);
   map.setLayoutProperty("boundaries-fill", "visibility", v);
+  map.setLayoutProperty("boundaries-labels", "visibility", v);
 });
 
 document.getElementById("opacity").addEventListener("input", (e) => {
