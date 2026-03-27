@@ -1,14 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
 # Flood Risk Pipeline — GitHub Actions Workflow
-# Runs monthly (or on-demand) and orchestrates the full pipeline:
-#   1. Build & push Docker image to GCR
-#   2. Trigger Cloud Run job to process data
-#   3. Upload outputs to Cloudflare R2
+#
+# Runs automatically on push to main, monthly on schedule, or manually.
+# Orchestrates the full pipeline:
+#   1. Build & push Docker image to Google Container Registry (GCR)
+#   2. Trigger Cloud Run job to process flood risk data
+#   3. Upload outputs (COG rasters + GeoJSON) to Google Cloud Storage (GCS)
+#
+# Required GitHub Repository Variables (Settings → Secrets and variables → Actions → Variables):
+#   GCP_PROJECT_ID              — your GCP project ID
+#   GCP_PROJECT_NUMBER          — your GCP project number
+#   GCP_REGION                  — GCP region (e.g. us-central1)
+#   GCS_BUCKET                  — your GCS bucket name
+#   WORKLOAD_IDENTITY_PROVIDER  — full path to your WIF provider
+#   SERVICE_ACCOUNT             — github-pipeline service account email
+#
+# No secrets needed — authentication uses Workload Identity Federation.
+# ─────────────────────────────────────────────────────────────────────────────
 
 name: Flood Risk Pipeline
 
 on:
+  # Run on every push to main
+  push:
+    branches:
+      - main
+
+  # Run on the 1st of every month at 06:00 UTC
   schedule:
     - cron: "0 6 1 * *"
+
+  # Allow manual trigger from the GitHub Actions UI
   workflow_dispatch:
     inputs:
       year:
@@ -19,67 +41,93 @@ on:
         description: "Month for rainfall data (1-12)"
         required: false
         default: "6"
+      force_download:
+        description: "Force re-download of all input data"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 env:
-  PROJECT_ID: project-a93d8eb8-d695-49f7-857
-  REGION: us-central1
-  IMAGE: gcr.io/project-a93d8eb8-d695-49f7-857/flood-risk-pipeline
-  JOB_NAME: flood-risk-job
-  WORKLOAD_IDENTITY_PROVIDER: projects/244163528833/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-  SERVICE_ACCOUNT: github-pipeline@project-a93d8eb8-d695-49f7-857.iam.gserviceaccount.com
+  PROJECT_ID:  ${{ vars.GCP_PROJECT_ID }}
+  REGION:      ${{ vars.GCP_REGION }}
+  GCS_BUCKET:  ${{ vars.GCS_BUCKET }}
+  IMAGE:       gcr.io/${{ vars.GCP_PROJECT_ID }}/flood-risk-pipeline
+  JOB_NAME:    flood-risk-job
+  WORKLOAD_IDENTITY_PROVIDER: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+  SERVICE_ACCOUNT:            ${{ vars.SERVICE_ACCOUNT }}
 
 jobs:
+  # ── Job 1: Build and push Docker image to GCR ──────────────────────────────
   build:
     name: Build & push image
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
+      id-token: write   # Required for Workload Identity Federation
+
     outputs:
       image_tag: ${{ steps.tag.outputs.tag }}
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Authenticate to GCP
+      - name: Authenticate to GCP via Workload Identity
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.SERVICE_ACCOUNT }}
 
-      - name: Set up Cloud SDK
+      - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for GCR
+      - name: Configure Docker to push to GCR
         run: gcloud auth configure-docker --quiet
 
-      - name: Generate image tag
+      - name: Generate image tag from timestamp
         id: tag
         run: echo "tag=$(date +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         run: |
-          docker build -f docker/Dockerfile -t $IMAGE:${{ steps.tag.outputs.tag }} -t $IMAGE:latest .
+          docker build \
+            -f docker/Dockerfile \
+            -t $IMAGE:${{ steps.tag.outputs.tag }} \
+            -t $IMAGE:latest \
+            .
+
+      - name: Push Docker image to GCR
+        run: |
           docker push $IMAGE:${{ steps.tag.outputs.tag }}
           docker push $IMAGE:latest
 
+      - name: Log image details
+        run: |
+          echo "### Image built and pushed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`$IMAGE:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag:** \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Built at:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # ── Job 2: Run Cloud Run processing job ────────────────────────────────────
   process:
     name: Process & upload
     runs-on: ubuntu-latest
     needs: build
     permissions:
       contents: read
-      id-token: write
+      id-token: write   # Required for Workload Identity Federation
 
     steps:
-      - name: Authenticate to GCP
+      - name: Authenticate to GCP via Workload Identity
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.SERVICE_ACCOUNT }}
 
-      - name: Set up Cloud SDK
+      - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Create or update Cloud Run job
@@ -91,11 +139,28 @@ jobs:
             --cpu=2 \
             --max-retries=1 \
             --task-timeout=30m \
-            --set-env-vars="DATA_DIR=/app/data,OUTPUT_DIR=/app/output,GCS_BUCKET=accra-flood-risk" \
+            --set-env-vars="\
+              DATA_DIR=/app/data,\
+              OUTPUT_DIR=/app/output,\
+              GCS_BUCKET=$GCS_BUCKET,\
+              RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
+              RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
+              WEIGHT_DEM=0.40,\
+              WEIGHT_RAINFALL=0.35,\
+              WEIGHT_SLOPE=0.25" \
             --project=$PROJECT_ID \
           || gcloud run jobs update $JOB_NAME \
             --image=$IMAGE:latest \
             --region=$REGION \
+            --set-env-vars="\
+              DATA_DIR=/app/data,\
+              OUTPUT_DIR=/app/output,\
+              GCS_BUCKET=$GCS_BUCKET,\
+              RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
+              RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
+              WEIGHT_DEM=0.40,\
+              WEIGHT_RAINFALL=0.35,\
+              WEIGHT_SLOPE=0.25" \
             --project=$PROJECT_ID
 
       - name: Execute Cloud Run job
@@ -105,10 +170,19 @@ jobs:
             --project=$PROJECT_ID \
             --wait
 
-      - name: Notify on success
+      - name: Log success summary
         if: success()
-        run: echo "✅ Pipeline completed successfully at $(date)" >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "### Pipeline completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "- **Completed at:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rainfall year:** ${{ github.event.inputs.year || '2024' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rainfall month:** ${{ github.event.inputs.month || '6' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **GCS bucket:** gs://$GCS_BUCKET" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live map:** https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" >> $GITHUB_STEP_SUMMARY
 
-      - name: Notify on failure
+      - name: Log failure summary
         if: failure()
-        run: echo "❌ Pipeline FAILED at $(date). Check Cloud Run logs." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "### Pipeline FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "- **Failed at:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Check Cloud Run logs:** https://console.cloud.google.com/run/jobs?project=$PROJECT_ID" >> $GITHUB_STEP_SUMMARY
