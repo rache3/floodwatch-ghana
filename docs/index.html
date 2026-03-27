@@ -270,10 +270,11 @@ map.on("load", () => {
     paint: { "fill-color": "transparent" },
   });
 
-  map.addLayer({
+map.addLayer({
     id: "boundaries-labels",
     type: "symbol",
     source: "boundaries",
+    minzoom: 8,
     layout: {
       "text-field": ["get", "NAME_2"],
       "text-size": 11,
