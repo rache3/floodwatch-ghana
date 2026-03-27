@@ -1,0 +1,34 @@
+# Environment config — NEVER commit this
+.env
+
+# Terraform sensitive files
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform.lock.hcl
+
+# Data files — too large for GitHub
+*.tif
+*.geotiff
+flood_risk_masked.tif
+cors.json
+mask_raster.py
+
+# GCP credentials
+gcp-key.json
+*.json.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VSCode
+.vscode/
