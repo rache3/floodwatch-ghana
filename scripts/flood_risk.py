@@ -170,6 +170,25 @@ def run():
     # Preserve NaN where DEM has no data
     risk[np.isnan(dem_raw)] = np.nan
 
+    # Reclassify to percentile-based risk tiers
+    log.info("Reclassifying to percentile-based risk tiers...")
+    valid_pixels = risk[~np.isnan(risk)]
+    p25 = np.percentile(valid_pixels, 25)
+    p75 = np.percentile(valid_pixels, 75)
+    log.info("Percentiles  p25=%.4f  p75=%.4f", p25, p75)
+
+    # Rescale so low risk = 0, moderate = 0.5, high = 1
+    # based on local distribution rather than absolute values
+    risk_classified = np.where(
+        np.isnan(risk), np.nan,
+        np.where(risk < p25, risk / p25 * 0.33,
+        np.where(risk < p75,
+                 0.33 + (risk - p25) / (p75 - p25) * 0.34,
+                 0.67 + (risk - p75) / (np.nanmax(risk) - p75) * 0.33))
+    ).astype(np.float32)
+
+    risk = risk_classified
+
     valid_count = np.sum(~np.isnan(risk))
     log.info("Risk stats  min=%.4f  max=%.4f  mean=%.4f  valid_pixels=%d",
              np.nanmin(risk), np.nanmax(risk), np.nanmean(risk), valid_count)
