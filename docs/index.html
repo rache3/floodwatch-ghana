@@ -246,6 +246,18 @@ map.on("load", () => {
     paint: { "raster-opacity": 0.8 },
   });
 
+  // Mask flood risk layer to Greater Accra boundary
+  map.addLayer({
+    id: "flood-risk-mask",
+    type: "fill",
+    source: "boundaries",
+    paint: {
+      "fill-color": "#1a1d26",
+      "fill-opacity": 1,
+    },
+    filter: ["!=", ["get", "NAME_1"], "GreaterAccra"],
+  });
+  
   // ── District boundaries (GeoJSON from R2) ───────────────────────────────
   map.addSource("boundaries", {
     type: "geojson",
