@@ -13,6 +13,7 @@ provider "google" {
 }
 
 # ── Enable required APIs ──────────────────────────────────────────────────────
+# disable_on_destroy = false means terraform destroy will NOT disable these APIs
 
 resource "google_project_service" "run_api" {
   service            = "run.googleapis.com"
@@ -40,6 +41,8 @@ resource "google_project_service" "iamcredentials_api" {
 }
 
 # ── GCS Bucket ───────────────────────────────────────────────────────────────
+# force_destroy = false + prevent_destroy = true means terraform destroy
+# will NEVER delete your bucket or your data. Always safe.
 
 resource "google_storage_bucket" "flood_risk" {
   name          = var.bucket_name
@@ -54,6 +57,10 @@ resource "google_storage_bucket" "flood_risk" {
     response_header = ["Content-Type"]
     max_age_seconds = 3600
   }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_storage_bucket_iam_member" "public_read" {
@@ -67,6 +74,10 @@ resource "google_storage_bucket_iam_member" "public_read" {
 resource "google_service_account" "github_pipeline" {
   account_id   = "github-pipeline"
   display_name = "GitHub Actions Pipeline"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_project_iam_member" "run_admin" {
@@ -94,16 +105,22 @@ resource "google_project_iam_member" "artifactregistry_admin" {
 }
 
 # ── Workload Identity Federation ─────────────────────────────────────────────
+# Using github-pool-v2 because GCP soft-deletes pools for 30 days
+# and the original github-pool cannot be reused until that period expires
 
 resource "google_iam_workload_identity_pool" "github_pool" {
-  workload_identity_pool_id = "github-pool"
+  workload_identity_pool_id = "github-pool-v2"
   display_name              = "GitHub Actions Pool"
   description               = "Identity pool for GitHub Actions OIDC"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_iam_workload_identity_pool_provider" "github_provider" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github_pool.workload_identity_pool_id
-  workload_identity_pool_provider_id = "github-provider"
+  workload_identity_pool_provider_id = "github-provider-v2"
   display_name                       = "GitHub Provider"
 
   oidc {
@@ -116,6 +133,10 @@ resource "google_iam_workload_identity_pool_provider" "github_provider" {
   }
 
   attribute_condition = "assertion.repository_owner == '${var.github_username}'"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "google_service_account_iam_member" "workload_identity_binding" {
@@ -125,8 +146,10 @@ resource "google_service_account_iam_member" "workload_identity_binding" {
 }
 
 # ── Cloud Run — TiTiler ───────────────────────────────────────────────────────
-# terraform apply  → brings TiTiler up
-# terraform destroy → shuts TiTiler down (stops all charges)
+# THIS is the only resource that costs money when running.
+# terraform apply  → TiTiler comes up, map goes live
+# terraform destroy → TiTiler shuts down, no charges
+# Everything above has prevent_destroy = true so it is NEVER deleted
 
 resource "google_cloud_run_v2_service" "titiler" {
   name     = "titiler"
