@@ -56,14 +56,13 @@ resource "google_storage_bucket" "flood_risk" {
   }
 }
 
-# Make bucket publicly readable
 resource "google_storage_bucket_iam_member" "public_read" {
   bucket = google_storage_bucket.flood_risk.name
   role   = "roles/storage.objectViewer"
   member = "allUsers"
 }
 
-# ── Service Account for GitHub Actions ───────────────────────────────────────
+# ── Service Account ───────────────────────────────────────────────────────────
 
 resource "google_service_account" "github_pipeline" {
   account_id   = "github-pipeline"
@@ -125,10 +124,9 @@ resource "google_service_account_iam_member" "workload_identity_binding" {
   member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_pool.name}/attribute.repository/${var.github_username}/${var.github_repo}"
 }
 
-# ── Cloud Run — TiTiler Tile Server ──────────────────────────────────────────
-# This is the only resource that incurs cost when running.
-# Run `terraform destroy` to shut it down and avoid charges.
-# Run `terraform apply` to bring it back when needed.
+# ── Cloud Run — TiTiler ───────────────────────────────────────────────────────
+# terraform apply  → brings TiTiler up
+# terraform destroy → shuts TiTiler down (stops all charges)
 
 resource "google_cloud_run_v2_service" "titiler" {
   name     = "titiler"
@@ -160,7 +158,6 @@ resource "google_cloud_run_v2_service" "titiler" {
   }
 }
 
-# Allow unauthenticated access to TiTiler
 resource "google_cloud_run_service_iam_member" "titiler_public" {
   location = google_cloud_run_v2_service.titiler.location
   service  = google_cloud_run_v2_service.titiler.name
