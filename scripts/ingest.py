@@ -46,24 +46,23 @@ DATA_DIR = os.getenv("DATA_DIR", "data")
 # DEM download — Copernicus GLO-30 via OpenTopography
 # ---------------------------------------------------------------------------
 
-def download_dem(out_path: str) -> bool:
-    """
-    Download Copernicus GLO-30 DEM for the Accra bounding box.
-    OpenTopography provides a free REST API with no API key for GLO-30.
-    """
+def download_dem(out_path):
+    """Download SRTM 30m DEM via OpenTopography free REST API."""
     url = (
         "https://portal.opentopography.org/API/globaldem"
-        "?demtype=COP30"
+        "?demtype=SRTMGL1"
         f"&south={BBOX['south']}&north={BBOX['north']}"
         f"&west={BBOX['west']}&east={BBOX['east']}"
         "&outputFormat=GTiff"
+        "&API_Key=demoapikeyot2022"
     )
-    log.info("Downloading Copernicus GLO-30 DEM …")
+    log.info("Downloading SRTM 30m DEM...")
     try:
         urllib.request.urlretrieve(url, out_path)
-        log.info("DEM saved → %s", out_path)
+        log.info("DEM downloaded (%.1f MB) → %s",
+                 os.path.getsize(out_path)/1024/1024, out_path)
         return True
-    except Exception as e:
+    except urllib.error.URLError as e:
         log.warning("DEM download failed: %s", e)
         return False
 
@@ -72,14 +71,37 @@ def download_dem(out_path: str) -> bool:
 # Slope derivation — from DEM using GDAL (no network needed)
 # ---------------------------------------------------------------------------
 
-def derive_slope(dem_path: str, slope_path: str) -> None:
-    """Derive slope (degrees) from DEM using gdaldem."""
-    log.info("Deriving slope from DEM …")
-    cmd = ["gdaldem", "slope", dem_path, slope_path, "-of", "GTiff", "-compute_edges"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"gdaldem failed: {result.stderr}")
-    log.info("Slope saved → %s", slope_path)
+def derive_slope(dem_path, slope_path):
+    """Derive slope in degrees from DEM using numpy. No GDAL command line needed."""
+    import numpy as np
+    log.info("Deriving slope from DEM using numpy...")
+    
+    with rasterio.open(dem_path) as src:
+        dem = src.read(1).astype(np.float32)
+        transform = src.transform
+        profile = src.profile.copy()
+        # Get pixel size in degrees
+        pixel_size_x = abs(transform.a)
+        pixel_size_y = abs(transform.e)
+
+    # Convert pixel size to approximate meters (at ~6 degrees latitude)
+    meters_per_degree = 111320
+    cell_x = pixel_size_x * meters_per_degree
+    cell_y = pixel_size_y * meters_per_degree
+
+    # Compute gradients using numpy
+    dy, dx = np.gradient(dem, cell_y, cell_x)
+
+    # Compute slope in degrees
+    slope = np.degrees(np.arctan(np.sqrt(dx**2 + dy**2)))
+    slope = slope.astype(np.float32)
+
+    # Write slope raster
+    profile.update(dtype="float32", count=1, compress="deflate")
+    with rasterio.open(slope_path, "w", **profile) as dst:
+        dst.write(slope, 1)
+
+    log.info("Slope derived → %s", slope_path)
 
 
 # ---------------------------------------------------------------------------

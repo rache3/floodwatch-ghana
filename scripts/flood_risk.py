@@ -1,17 +1,13 @@
 """
-Flood Risk Pipeline - Greater Accra Region
-Rebuilt from original GEE work (Rachel Atia, 2024)
+Flood Risk Processing Script — Greater Accra Region
+Author: Rachel Atia
 
-Inputs  : DEM (int16, EPSG:4326), Rainfall (float64), Slope (float32)
-Output  : flood_risk_map.tif  — normalised 0-1 risk score (float32)
-          flood_risk_map.cog.tif — Cloud-Optimised GeoTIFF for tile serving
+Inputs  : DEM (EPSG:4326), Rainfall (float64), Slope (float32)
+Output  : flood_risk_map.tif      — normalised 0-1 risk score
+          flood_risk_map.cog.tif  — Cloud-Optimised GeoTIFF for TiTiler
 
-Pipeline stages
----------------
-1. Align all rasters to a common grid (DEM is the reference)
-2. Normalise each layer to [0, 1]
-3. Compute weighted composite risk score
-4. Write standard GeoTIFF + Cloud-Optimised GeoTIFF (COG)
+Usage   : python scripts/flood_risk.py
+Config  : reads from .env file in project root
 """
 
 import os
@@ -19,9 +15,15 @@ import logging
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
-from rasterio.warp import reproject, calculate_default_transform
+from rasterio.warp import reproject
 from rasterio import MemoryFile
 from rasterio.shutil import copy as rio_copy
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,9 +32,7 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Configuration — edit weights to tune the risk model
-# ---------------------------------------------------------------------------
+# ── Config from .env ──────────────────────────────────────────────────────────
 DATA_DIR   = os.getenv("DATA_DIR",   "data")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "output")
 
@@ -40,43 +40,40 @@ DEM_PATH      = os.path.join(DATA_DIR, "accra_dem.tif")
 RAINFALL_PATH = os.path.join(DATA_DIR, "accra_rainfall.tif")
 SLOPE_PATH    = os.path.join(DATA_DIR, "accra_slope.tif")
 
-OUTPUT_TIF    = os.path.join(OUTPUT_DIR, "flood_risk_map.tif")
-OUTPUT_COG    = os.path.join(OUTPUT_DIR, "flood_risk_map.cog.tif")
+OUTPUT_TIF = os.path.join(OUTPUT_DIR, "flood_risk_map.tif")
+OUTPUT_COG = os.path.join(OUTPUT_DIR, "flood_risk_map.cog.tif")
 
-# Weights must sum to 1.0
-# Low elevation  → higher risk  (inverted)
-# High rainfall  → higher risk
-# Low slope      → higher risk  (flat = water pools) (inverted)
 WEIGHTS = {
-    "dem":      0.40,   # elevation is the strongest predictor
-    "rainfall": 0.35,   # rainfall intensity
-    "slope":    0.25,   # terrain slope (flat areas accumulate water)
+    "dem":      float(os.getenv("WEIGHT_DEM",      "0.40")),
+    "rainfall": float(os.getenv("WEIGHT_RAINFALL",  "0.35")),
+    "slope":    float(os.getenv("WEIGHT_SLOPE",     "0.25")),
 }
-
 assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, "Weights must sum to 1.0"
 
 
-# ---------------------------------------------------------------------------
-# Helper utilities
-# ---------------------------------------------------------------------------
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-def normalise(arr: np.ndarray, invert: bool = False) -> np.ndarray:
-    """Min-max normalise to [0, 1]. Optionally invert so high raw = low risk."""
-    a_min, a_max = np.nanmin(arr), np.nanmax(arr)
-    if a_max == a_min:
-        return np.zeros_like(arr, dtype=np.float32)
-    norm = (arr - a_min) / (a_max - a_min)
-    return (1.0 - norm) if invert else norm
+def load_raster(path):
+    """Load raster as float32 numpy array, replacing nodata with nan."""
+    with rasterio.open(path) as src:
+        data = src.read(1).astype(np.float32)
+        profile = src.profile.copy()
+        nodata = src.nodata
+        if nodata is not None:
+            data[data == nodata] = np.nan
+        # Also mask extreme fill values common in SRTM/terrain data
+        data[data < -9000] = np.nan
+        data[data > 9000]  = np.nan
+    return data, profile
 
 
-def align_to_reference(src_path: str, ref_profile: dict) -> np.ndarray:
-    """
-    Reproject + resample src_path to match ref_profile's CRS, transform,
-    width and height. Returns a float32 numpy array.
-    """
+def align_to_reference(src_path, ref_profile):
+    """Reproject and resample src_path to match ref_profile grid."""
     with rasterio.open(src_path) as src:
-        dst_arr = np.empty(
-            (ref_profile["height"], ref_profile["width"]), dtype=np.float32
+        dst_arr = np.full(
+            (ref_profile["height"], ref_profile["width"]),
+            fill_value=np.nan,
+            dtype=np.float32,
         )
         reproject(
             source=rasterio.band(src, 1),
@@ -86,12 +83,27 @@ def align_to_reference(src_path: str, ref_profile: dict) -> np.ndarray:
             dst_transform=ref_profile["transform"],
             dst_crs=ref_profile["crs"],
             resampling=Resampling.bilinear,
+            src_nodata=src.nodata,
+            dst_nodata=np.nan,
         )
+    # Clean up any remaining fill values
+    dst_arr[dst_arr < -9000] = np.nan
+    dst_arr[dst_arr > 9000]  = np.nan
     return dst_arr
 
 
-def write_cog(src_path: str, dst_path: str) -> None:
-    """Convert a GeoTIFF to a Cloud-Optimised GeoTIFF (COG)."""
+def normalise(arr, invert=False):
+    """Min-max normalise to [0, 1] ignoring NaN. Invert if needed."""
+    a_min = np.nanmin(arr)
+    a_max = np.nanmax(arr)
+    if a_max == a_min:
+        return np.zeros_like(arr, dtype=np.float32)
+    norm = (arr - a_min) / (a_max - a_min)
+    return (1.0 - norm).astype(np.float32) if invert else norm.astype(np.float32)
+
+
+def write_cog(src_path, dst_path):
+    """Convert GeoTIFF to Cloud-Optimised GeoTIFF."""
     copy_opts = {
         "driver": "GTiff",
         "tiled": True,
@@ -101,61 +113,78 @@ def write_cog(src_path: str, dst_path: str) -> None:
         "predictor": 2,
         "copy_src_overviews": True,
     }
-    # Build overviews in a memory file first
     with rasterio.open(src_path) as src:
         with MemoryFile() as memfile:
             with memfile.open(**src.profile) as mem:
                 mem.write(src.read())
-                overview_levels = [2, 4, 8, 16, 32]
-                mem.build_overviews(overview_levels, Resampling.average)
+                mem.build_overviews([2, 4, 8, 16, 32], Resampling.average)
                 mem.update_tags(ns="rio_overview", resampling="average")
                 rio_copy(mem, dst_path, **copy_opts)
     log.info("COG written → %s", dst_path)
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
+# ── Main pipeline ─────────────────────────────────────────────────────────────
 
 def run():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # ── 1. Load reference grid from DEM ────────────────────────────────────
-    log.info("Loading DEM as reference grid …")
-    with rasterio.open(DEM_PATH) as dem_src:
-        ref_profile = dem_src.profile.copy()
-        dem_raw = dem_src.read(1).astype(np.float32)
+    # Validate inputs exist
+    for path, name in [(DEM_PATH, "DEM"), (RAINFALL_PATH, "Rainfall"), (SLOPE_PATH, "Slope")]:
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"{name} not found: {path}\n"
+                f"Run: python scripts/ingest.py"
+            )
 
-    # ── 2. Align rainfall and slope to DEM grid ────────────────────────────
-    log.info("Aligning rainfall to DEM grid …")
+    log.info("Weights: DEM=%.0f%% Rainfall=%.0f%% Slope=%.0f%%",
+             WEIGHTS['dem']*100, WEIGHTS['rainfall']*100, WEIGHTS['slope']*100)
+
+    # 1. Load DEM as reference grid
+    log.info("Loading DEM as reference grid...")
+    dem_raw, ref_profile = load_raster(DEM_PATH)
+    log.info("DEM shape: %s  valid pixels: %d%%",
+             dem_raw.shape,
+             int(100 * np.sum(~np.isnan(dem_raw)) / dem_raw.size))
+
+    # 2. Align rainfall and slope to DEM grid
+    log.info("Aligning rainfall to DEM grid...")
     rainfall_raw = align_to_reference(RAINFALL_PATH, ref_profile)
 
-    log.info("Aligning slope to DEM grid …")
+    log.info("Aligning slope to DEM grid...")
     slope_raw = align_to_reference(SLOPE_PATH, ref_profile)
 
-    # ── 3. Normalise layers ────────────────────────────────────────────────
-    log.info("Normalising layers …")
+    # 3. Normalise layers
+    log.info("Normalising layers...")
     dem_norm      = normalise(dem_raw,      invert=True)   # low elev = high risk
     rainfall_norm = normalise(rainfall_raw, invert=False)  # high rain = high risk
     slope_norm    = normalise(slope_raw,    invert=True)   # flat = high risk
 
-    # ── 4. Weighted composite score ────────────────────────────────────────
-    log.info("Computing weighted flood risk score …")
+    # 4. Weighted composite score
+    log.info("Computing weighted flood risk score...")
     risk = (
         WEIGHTS["dem"]      * dem_norm      +
         WEIGHTS["rainfall"] * rainfall_norm +
         WEIGHTS["slope"]    * slope_norm
     ).astype(np.float32)
 
-    log.info(
-        "Risk stats  min=%.4f  max=%.4f  mean=%.4f",
-        risk.min(), risk.max(), risk.mean()
-    )
+    # Preserve NaN where DEM has no data
+    risk[np.isnan(dem_raw)] = np.nan
 
-    # ── 5. Write output GeoTIFF ────────────────────────────────────────────
+    valid_count = np.sum(~np.isnan(risk))
+    log.info("Risk stats  min=%.4f  max=%.4f  mean=%.4f  valid_pixels=%d",
+             np.nanmin(risk), np.nanmax(risk), np.nanmean(risk), valid_count)
+
+    if valid_count == 0:
+        raise ValueError("All risk values are NaN — check input rasters.")
+
+    # 5. Write GeoTIFF
     out_profile = ref_profile.copy()
-    out_profile.update(dtype="float32", count=1, compress="deflate")
-
+    out_profile.update(
+        dtype="float32",
+        count=1,
+        compress="deflate",
+        nodata=np.nan,
+    )
     log.info("Writing GeoTIFF → %s", OUTPUT_TIF)
     with rasterio.open(OUTPUT_TIF, "w", **out_profile) as dst:
         dst.write(risk, 1)
@@ -165,11 +194,12 @@ def run():
             crs="EPSG:4326",
         )
 
-    # ── 6. Write COG for TiTiler ───────────────────────────────────────────
-    log.info("Building Cloud-Optimised GeoTIFF …")
+    # 6. Write COG
+    log.info("Building Cloud-Optimised GeoTIFF...")
     write_cog(OUTPUT_TIF, OUTPUT_COG)
 
     log.info("Pipeline complete ✓")
+    log.info("Outputs saved to: %s/", OUTPUT_DIR)
 
 
 if __name__ == "__main__":
