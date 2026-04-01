@@ -2,14 +2,14 @@
 
 **Author:** Rachel Atia  
 **Live map:** https://rache3.github.io/flood-risk-mapping-greater-accra  
-**TiTiler API:** https://titiler-244163528833.us-central1.run.app/health  
+**TiTiler API:** https://titiler-z2qegb4nha-uc.a.run.app/health  
 **Stack:** GEE · Python · Docker · GCP Cloud Run · GCS · TiTiler · MapLibre · GitHub Actions
 
 ---
 
 ## What this is
 
-A cloud-native, automated flood risk mapping pipeline for Greater Accra, Ghana. It takes three geospatial raster inputs — elevation (DEM), rainfall, and slope — normalises them, applies a weighted risk model, and serves the output as a live interactive web map.
+A cloud-native, automated flood risk mapping pipeline for Greater Accra, Ghana. It takes five geospatial raster inputs — elevation (DEM), rainfall, slope, land cover, and water proximity — normalises them, applies a weighted risk model, and serves the output as a live interactive web map.
 
 This is a **Digital Twin prototype** — a living system that updates on a schedule and serves results via a public web map, rather than a static GIS output.
 
@@ -30,10 +30,10 @@ Features:
 ## Architecture
 
 ```
-Input rasters (DEM · rainfall · slope)
+Input rasters (DEM · rainfall · slope · landcover · water proximity)
               │
               ▼
-    scripts/ingest.py          ← auto-downloads data from Copernicus + ERA5
+    scripts/ingest.py          ← auto-downloads data from Copernicus + ESA + OSM
               │
               ▼
     scripts/flood_risk.py      ← normalises, scores, writes COG
@@ -58,14 +58,18 @@ Orchestrated by **GitHub Actions** — runs monthly on a cron schedule or manual
 ## Risk model
 
 ```
-Risk = 0.40 × (1 - norm_DEM) + 0.35 × norm_Rainfall + 0.25 × (1 - norm_Slope)
+Risk = 0.30 × (1 - norm_DEM) + 0.25 × norm_Rainfall + 0.20 × (1 - norm_Slope) + 0.15 × norm_Landcover + 0.10 × (1 - norm_Waterbodies)
 ```
 
 | Layer | Weight | Direction | Rationale |
 |---|---|---|---|
-| DEM / Elevation | 40% | Inverted | Low-lying areas flood first |
-| ERA5 Rainfall | 35% | Normal | Higher rainfall = higher risk |
-| Terrain Slope | 25% | Inverted | Flat terrain = poor drainage |
+| DEM / Elevation | 30% | Inverted | Low-lying areas flood first |
+| ERA5 Rainfall | 25% | Normal | Higher rainfall = higher risk |
+| Terrain Slope | 20% | Inverted | Flat terrain = poor drainage |
+| Land Cover | 15% | Normal | Impervious surfaces increase runoff |
+| Water Proximity | 10% | Inverted | Closer to water bodies = higher risk |
+
+**Enhanced Classification**: The model now uses percentile-based risk tiers (25th/75th percentiles) for adaptive classification that adapts to local data distribution rather than absolute thresholds. This provides three distinct risk categories: low (0-0.33), moderate (0.33-0.67), and high (0.67-1.0).
 
 Output range: **0 (low risk) → 1 (high risk)**
 
@@ -96,6 +100,26 @@ flood-risk-mapping-greater-accra/
 │   ├── Dockerfile             # Processing container (Python + rasterio + GDAL)
 │   └── requirements.txt
 ├── scripts/
+│   ├── ingest.py              # Auto-downloads DEM, derives slope, fetches rainfall
+│   ├── flood_risk.py          # Core processing — normalise, score, write COG
+│   ├── mask_raster.py         # Boundary masking to hide bleeding tiles
+│   └── upload_gcs.py          # Upload outputs to Google Cloud Storage
+├── titiler/
+│   └── main.py                # TiTiler FastAPI tile server
+├── docs/
+│   └── index.html             # MapLibre GL JS web map (served by GitHub Pages)
+├── terraform/
+│   ├── main.tf                # GCP infrastructure as code
+│   ├── variables.tf           # Terraform variables
+│   ├── outputs.tf             # Terraform outputs
+│   └── terraform.tfvars       # Actual values (gitignored)
+├── data/                      # Input rasters (auto-downloaded)
+├── output/                    # Generated flood risk maps
+├── .env.example               # Configuration template
+├── mask_raster.py             # Boundary masking script (root level)
+├── PIPELINE_GUIDE.md          # Full user guide with HCL/Terraform section
+└── README.md
+```
 │   ├── ingest.py              # Auto-downloads DEM, derives slope, fetches rainfall
 │   ├── flood_risk.py          # Core processing — normalise, score, write COG
 │   └── upload_gcs.py          # Upload outputs to Google Cloud Storage
@@ -141,6 +165,9 @@ python scripts/ingest.py
 
 # Process and generate flood risk COG
 python scripts/flood_risk.py
+
+# Mask to Greater Accra boundary (removes rectangular bounding box)
+python mask_raster.py
 
 # Upload to GCS
 python scripts/upload_gcs.py
@@ -196,7 +223,16 @@ Go to **Actions → Flood Risk Pipeline → Run workflow** and optionally set th
 
 ---
 
-## Adapting to a different study area
+## Recent Improvements (March 2026)
+
+- **Boundary Masking**: Added `mask_raster.py` to clip flood risk map to Greater Accra boundary, eliminating rectangular tile bleeding
+- **Percentile-Based Classification**: Implemented adaptive risk tiers using 25th/75th percentiles for better score distribution
+- **Enhanced NoData Handling**: Improved handling of missing data throughout the pipeline
+- **Pure NumPy Slope Derivation**: Removed GDAL dependency for slope calculation using NumPy operations
+- **Infrastructure as Code**: Complete Terraform setup for GCP resources with proper lifecycle management
+- **Workload Identity Federation**: Secure GitHub Actions authentication without service account keys
+
+---
 
 1. Update the bounding box in `.env` — use your area's extent from QGIS
 2. Replace `gadm41_GHA_2.json` with the GADM boundary for your country/region
@@ -218,13 +254,21 @@ See [PIPELINE_GUIDE.md](PIPELINE_GUIDE.md) for the full user guide including:
 
 ## Data sources
 
-| Dataset | Source | Resolution | License |
-|---|---|---|---|
-| DEM | Copernicus GLO-30 via OpenTopography | 30m | Free |
-| Rainfall | ERA5-Land via ECMWF CDS | ~9km | Free (research) |
-| Slope | Derived from DEM via GDAL | 30m | — |
-| Boundaries | GADM v4.1 | — | Free (research) |
+| Dataset | Source | Resolution | License | Processing |
+|---|---|---|---|---|
+| DEM | SRTM GL1 via OpenTopography | 30m | Free | Direct download, no API key |
+| Rainfall | ERA5-Land via CDS | ~9km | Research free | Monthly aggregation |
+| Slope | Derived from SRTM DEM | 30m | — | Pure NumPy calculation |
+| Boundaries | GADM v4.1 | — | Research free | GeoJSON masking |
+| Land Cover | ESA WorldCover 2021 | 10m | Free | Imperviousness fraction |
+| Water Bodies | OpenStreetMap | Variable | Open | Distance calculation |
+
+**Recent Improvements:**
+- Pure NumPy slope derivation (no GDAL dependency)
+- Enhanced nodata handling throughout pipeline
+- Boundary masking to prevent tile bleeding
+- Percentile-based adaptive risk classification
 
 ---
 
-*Greater Accra Region, Ghana · EPSG:4326 · Rachel Atia · 2024–2026*
+*Greater Accra Region, Ghana · EPSG:4326 · Rachel Atia · 2025–2026*

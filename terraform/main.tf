@@ -58,9 +58,9 @@ resource "google_storage_bucket" "flood_risk" {
     max_age_seconds = 3600
   }
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 resource "google_storage_bucket_iam_member" "public_read" {
@@ -75,9 +75,9 @@ resource "google_service_account" "github_pipeline" {
   account_id   = "github-pipeline"
   display_name = "GitHub Actions Pipeline"
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 resource "google_project_iam_member" "run_admin" {
@@ -113,9 +113,9 @@ resource "google_iam_workload_identity_pool" "github_pool" {
   display_name              = "GitHub Actions Pool"
   description               = "Identity pool for GitHub Actions OIDC"
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 resource "google_iam_workload_identity_pool_provider" "github_provider" {
@@ -134,9 +134,9 @@ resource "google_iam_workload_identity_pool_provider" "github_provider" {
 
   attribute_condition = "assertion.repository_owner == '${var.github_username}'"
 
-  lifecycle {
-    prevent_destroy = true
-  }
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 resource "google_service_account_iam_member" "workload_identity_binding" {

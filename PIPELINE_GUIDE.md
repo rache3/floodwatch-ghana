@@ -21,24 +21,27 @@
 
 ## 1. Pipeline Overview
 
-This pipeline takes three geospatial raster inputs — elevation (DEM), rainfall, and slope — and combines them into a weighted flood risk score for Greater Accra. The output is served as an interactive web map.
+This pipeline takes five geospatial raster inputs — elevation (DEM), rainfall, slope, land cover, and water proximity — and combines them into a weighted flood risk score for Greater Accra. The output is served as an interactive web map.
 
 ### How it flows
 
 ```
-Input rasters (DEM, rainfall, slope)
+Input rasters (DEM, rainfall, slope, landcover, water proximity)
           │
           ▼
   scripts/ingest.py          ← downloads/prepares data
           │
           ▼
-  scripts/flood_risk.py      ← normalises, scores, writes COG
+  scripts/flood_risk.py      ← normalises, scores, percentile classification, writes COG
           │
           ▼
-  scripts/upload_gcs.py      ← uploads COG to GCS bucket
+  mask_raster.py             ← masks to Greater Accra boundary (removes tile bleeding)
           │
           ▼
-  Google Cloud Storage       ← stores flood_risk_map.cog.tif
+  scripts/upload_gcs.py      ← uploads masked COG to GCS bucket
+          │
+          ▼
+  Google Cloud Storage       ← stores flood_risk_masked.cog.tif
           │
           ▼
   TiTiler on Cloud Run       ← serves the COG as XYZ map tiles
@@ -50,13 +53,23 @@ Input rasters (DEM, rainfall, slope)
 ### Risk score formula
 
 ```
-Risk = 0.40 × (1 - norm_DEM) + 0.35 × norm_Rainfall + 0.25 × (1 - norm_Slope)
+Risk = 0.30 × (1 - norm_DEM) + 0.25 × norm_Rainfall + 0.20 × (1 - norm_Slope) + 0.15 × norm_Landcover + 0.10 × (1 - norm_Waterbodies)
 ```
 
 - **DEM** is inverted — low elevation = high risk
 - **Rainfall** is normal — high rainfall = high risk
 - **Slope** is inverted — flat terrain = high risk (poor drainage)
-- Output range: **0 (low risk) → 1 (high risk)**
+- **Land cover** is normal — impervious surfaces = high risk
+- **Water proximity** is inverted — close to water = high risk
+
+**Enhanced Classification**: The pipeline now uses percentile-based risk tiers for adaptive classification:
+- **Low risk**: 0 - 25th percentile
+- **Moderate risk**: 25th - 75th percentile  
+- **High risk**: 75th percentile - maximum
+
+This provides better score distribution and three distinct risk categories instead of absolute thresholds.
+
+Output range: **0 (low risk) → 1 (high risk)**
 
 ---
 
@@ -158,8 +171,9 @@ Expected output:
 ```
 
 Two files will appear in the `output/` folder:
-- `flood_risk_map.tif` — standard GeoTIFF
-- `flood_risk_map.cog.tif` — Cloud-Optimised GeoTIFF (for TiTiler)
+- `flood_risk_map.tif` — standard GeoTIFF (full rectangular extent)
+- `flood_risk_map.cog.tif` — Cloud-Optimised GeoTIFF (full rectangular extent)
+- `flood_risk_masked.tif` — boundary-masked GeoTIFF (Greater Accra only, no tile bleeding)
 
 ### Step 3 — Mask raster to Greater Accra boundary
 
@@ -641,7 +655,7 @@ When you have new DEM, rainfall, or slope data:
    ```bash
    python scripts/flood_risk.py
    ```
-3. Re-run the masking script:
+3. Re-run the masking script (removes rectangular bounding box):
    ```bash
    python mask_raster.py
    ```
@@ -765,6 +779,8 @@ Then upload the masked output:
 ```bash
 gsutil cp flood_risk_masked.tif gs://accra-flood-risk/rasters/flood_risk_map.cog.tif
 ```
+
+This creates `flood_risk_masked.tif` which removes the rectangular bounding box and prevents tile bleeding on the map.
 
 ---
 
