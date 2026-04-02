@@ -45,6 +45,8 @@ import logging
 import urllib.request
 import urllib.error
 import numpy as np
+import os
+
 
 try:
     from dotenv import load_dotenv
@@ -58,6 +60,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+# Remove PostgreSQL's conflicting PROJ installation from the environment
+# This forces rasterio to use its own bundled PROJ data
+os.environ.pop("PROJ_LIB", None)
+os.environ.pop("PROJ_DATA", None)
+
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 DATA_DIR         = os.getenv("DATA_DIR", "data")
