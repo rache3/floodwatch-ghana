@@ -86,6 +86,12 @@ SCRIPTS = [
         "output":      "accra_waterbodies.tif",
         "required":    True,  # Now required for enhanced flood risk model
     },
+    {
+        "name":        "ingest_aod",
+        "description": "MODIS / MERRA-2 Aerosol Optical Depth — quality flagging",
+        "output":      "accra_aod_meta.json",
+        "required":    False,
+    }
 ]
 
 DATA_DIR = os.getenv("DATA_DIR", "data")
