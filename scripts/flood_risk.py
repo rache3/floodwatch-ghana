@@ -43,6 +43,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+# Remove PostgreSQL's conflicting PROJ installation from the environment
+# This forces rasterio to use its own bundled PROJ data
+os.environ.pop("PROJ_LIB", None)
+os.environ.pop("PROJ_DATA", None)
+
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DATA_DIR   = os.getenv("DATA_DIR",   "data")
@@ -129,7 +134,7 @@ def normalise(arr, invert=False):
         return np.zeros_like(arr, dtype=np.float32)
     norm = (arr - a_min) / (a_max - a_min)
     return (1.0 - norm).astype(np.float32) if invert else norm.astype(np.float32)
-
+ 
 
 def mask_to_boundary(src_path: str, dst_path: str) -> None:
     """

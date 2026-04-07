@@ -1,0 +1,52 @@
+{
+  "pipeline_run": {
+    "year": 2024,
+    "month": 6,
+    "date": "2026-04-02T22:46:54.220157"
+  },
+  "aod": {
+    "value": 0.45,
+    "source": "climatology",
+    "units": "AOD at 550nm (dimensionless)",
+    "quality_flag": "MODERATE"
+  },
+  "optical_reliability": "moderate",
+  "recommendation": "Optical satellite inputs are usable. Apply atmospheric correction before use.",
+  "accra_context": {
+    "national_mean_aod": 0.509,
+    "accra_mean_aod_terra": 0.703,
+    "accra_mean_aod_aqua": 0.587,
+    "nearest_aeronet_site": "Ilorin, Nigeria (~600km northeast)",
+    "note": "No AERONET ground station exists in Ghana. MODIS satellite AOD is the best available correction source. This represents a research gap \u2014 see Dr. Craig Coburn (Univ. of Lethbridge) on irradiance monitoring for tropical UAV calibration."
+  },
+  "layers_affected": {
+    "dem": {
+      "affected": false,
+      "reason": "SRTM radar \u2014 not affected by aerosols"
+    },
+    "slope": {
+      "affected": false,
+      "reason": "Derived from DEM \u2014 not affected"
+    },
+    "rainfall": {
+      "affected": false,
+      "reason": "ERA5 reanalysis \u2014 not affected"
+    },
+    "landcover": {
+      "affected": false,
+      "reason": "ESA WorldCover uses SAR \u2014 not affected"
+    },
+    "waterbodies": {
+      "affected": false,
+      "reason": "OpenStreetMap vector \u2014 not affected"
+    },
+    "future_ndvi": {
+      "affected": true,
+      "reason": "Optical \u2014 will require AOD correction"
+    },
+    "future_s2": {
+      "affected": true,
+      "reason": "Optical \u2014 will require AOD correction"
+    }
+  }
+}

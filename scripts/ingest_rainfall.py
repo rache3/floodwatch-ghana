@@ -1,46 +1,70 @@
 """
-ingest_rainfall.py — Download Rainfall Data
-============================================
-Primary source : ERA5-Land monthly mean precipitation (ECMWF CDS)
-Fallback source: GPM IMERG monthly mean (NASA, no API key needed)
-Output         : data/accra_rainfall.tif  (float32, mm, EPSG:4326)
+ingest_rainfall.py — Download Monthly Precipitation
+=====================================================
+Primary source : GPM IMERG Final Run (NASA) — actual monthly precipitation
+                 0.1° resolution (~10km), bias-corrected against rain gauges
+                 Requires free NASA Earthdata account
+Fallback 1     : GPM IMERG Late Run — near real-time, ~12 hour latency
+Fallback 2     : ERA5-Land monthly mean (ECMWF CDS) — requires CDS account
+Fallback 3     : CHIRPS v2.0 — no authentication required
+Output         : data/accra_rainfall.tif  (float32, mm/month, EPSG:4326)
 
-Why two sources?
-----------------
-ERA5-Land is the preferred source — it has been extensively validated
-and is widely used in climate research. However it requires:
-  - A free CDS API account (cds.climate.copernicus.eu)
-  - A ~/.cdsapirc credentials file
-  - The cdsapi Python package
+Why GPM IMERG over ERA5:
+--------------------------
+ERA5 provides climatological monthly means — essentially a historical
+average. GPM IMERG provides ACTUAL rainfall for the specific month being
+processed. This means:
 
-GPM IMERG is the fallback — no API key, no credentials file needed.
-It has slightly lower spatial resolution but is free and immediate.
+- If June 2024 had unusually heavy rainfall, GPM captures it
+- ERA5 would return the same June average regardless of the actual year
+- GPM updates near-real-time — Late Run available within 12 hours
+- This makes FloodWatch genuinely responsive to real rainfall conditions
 
-ERA5 vs GPM for flood risk:
-----------------------------
-ERA5-Land: ~9km resolution, monthly means, validated against gauges
-GPM IMERG: ~10km resolution, 30-min to monthly aggregations, near-realtime
+GPM IMERG Products:
+--------------------
+Final Run  — best accuracy, bias-corrected against rain gauges
+             ~3.5 month latency — use for historical months
+Late Run   — near real-time, ~12 hour latency, no gauge correction
+             use for recent months where Final Run not yet available
+Early Run  — fastest, ~4 hour latency, least accurate (not used here)
 
-For a static monthly risk model, ERA5 is slightly better.
-For a near-realtime early warning system, GPM IMERG is the right choice
-because it updates every 30 minutes with ~4 hour latency.
+Resolution : 0.1° x 0.1° (~10km)
+Coverage   : 60S to 60N — covers Ghana perfectly
+Units      : mm/month (accumulated)
+
+Authentication:
+---------------
+GPM IMERG requires a free NASA Earthdata account:
+  Register : https://urs.earthdata.nasa.gov/users/new
+  Set .env :
+    EARTHDATA_USER=your_username
+    EARTHDATA_PASS=your_password
+
+Also requires h5py for HDF5 parsing:
+  pip install h5py
 
 Usage:
-    # With ERA5 (recommended, requires CDS account):
     python scripts/ingest_rainfall.py
 
-    # Force GPM fallback:
-    RAINFALL_SOURCE=gpm python scripts/ingest_rainfall.py
-
-    # Specify year and month:
-    RAINFALL_YEAR=2024 RAINFALL_MONTH=6 python scripts/ingest_rainfall.py
+    # Force specific source:
+    RAINFALL_SOURCE=gpm_final  python scripts/ingest_rainfall.py
+    RAINFALL_SOURCE=gpm_late   python scripts/ingest_rainfall.py
+    RAINFALL_SOURCE=chirps     python scripts/ingest_rainfall.py
 """
 
 import os
+import gzip
 import logging
+import calendar
 import urllib.request
 import urllib.error
 import numpy as np
+from datetime import date
+
+# Remove conflicting PROJ installation from environment (PostgreSQL/PostGIS)
+# Forces rasterio to use its own bundled PROJ data
+os.environ.pop("PROJ_LIB", None)
+os.environ.pop("PROJ_DATA", None)
 
 try:
     from dotenv import load_dotenv
@@ -59,11 +83,17 @@ log = logging.getLogger(__name__)
 DATA_DIR    = os.getenv("DATA_DIR", "data")
 OUTPUT_PATH = os.path.join(DATA_DIR, "accra_rainfall.tif")
 
-# Temporal configuration — which month to download
 YEAR  = int(os.getenv("RAINFALL_YEAR",  "2024"))
-MONTH = int(os.getenv("RAINFALL_MONTH", "6"))     # June = peak rainy season
+MONTH = int(os.getenv("RAINFALL_MONTH", "6"))
 
-# Bounding box for Greater Accra (same as DEM)
+# Source: auto = GPM Final → GPM Late → ERA5 → CHIRPS
+RAINFALL_SOURCE = os.getenv("RAINFALL_SOURCE", "auto").lower()
+
+# NASA Earthdata credentials
+EARTHDATA_USER = os.getenv("EARTHDATA_USER", "")
+EARTHDATA_PASS = os.getenv("EARTHDATA_PASS", "")
+
+# Greater Accra bounding box
 BBOX = {
     "west":  float(os.getenv("BBOX_WEST",  "-0.50")),
     "east":  float(os.getenv("BBOX_EAST",   "0.50")),
@@ -71,53 +101,297 @@ BBOX = {
     "north": float(os.getenv("BBOX_NORTH",  "5.95")),
 }
 
-# Force a specific source (era5 or gpm). Default: try era5, fall back to gpm
-RAINFALL_SOURCE = os.getenv("RAINFALL_SOURCE", "auto").lower()
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def months_ago(year: int, month: int) -> int:
+    """How many months ago was this year/month from today."""
+    today = date.today()
+    return (today.year - year) * 12 + (today.month - month)
 
 
-# ── ERA5 Download ─────────────────────────────────────────────────────────────
+def build_earthdata_opener() -> urllib.request.OpenerDirector:
+    """Build URL opener with NASA Earthdata Basic Auth + cookie support."""
+    password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+    password_mgr.add_password(
+        None,
+        "https://urs.earthdata.nasa.gov",
+        EARTHDATA_USER,
+        EARTHDATA_PASS,
+    )
+    auth_handler   = urllib.request.HTTPBasicAuthHandler(password_mgr)
+    cookie_handler = urllib.request.HTTPCookieProcessor()
+    return urllib.request.build_opener(auth_handler, cookie_handler)
 
-def download_era5(output_path: str, year: int, month: int) -> bool:
+
+def write_raster(data: np.ndarray, output_path: str,
+                 source: str, year: int, month: int) -> None:
+    """Write rainfall array as GeoTIFF over Greater Accra bounding box."""
+    import rasterio
+    from rasterio.transform import from_bounds
+
+    rows, cols = data.shape
+    transform  = from_bounds(
+        BBOX["west"], BBOX["south"],
+        BBOX["east"], BBOX["north"],
+        cols, rows,
+    )
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    with rasterio.open(
+        output_path, "w",
+        driver="GTiff",
+        height=rows, width=cols,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=transform,
+        compress="deflate",
+    ) as dst:
+        dst.write(data.astype(np.float32), 1)
+        dst.update_tags(
+            description="Monthly total precipitation — Greater Accra",
+            source=source,
+            year=str(year),
+            month=f"{month:02d}",
+            units="mm/month",
+        )
+
+    log.info("Rainfall raster written → %s", output_path)
+
+
+def validate(output_path: str) -> None:
+    """Log rainfall statistics and flag suspicious values."""
+    import rasterio
+
+    with rasterio.open(output_path) as src:
+        data = src.read(1).astype(float)
+        nodata = src.nodata
+        if nodata is not None:
+            data[data == nodata] = float("nan")
+        data[data < 0] = float("nan")
+
+    valid = data[~np.isnan(data)]
+    if len(valid) == 0:
+        log.warning("No valid rainfall pixels")
+        return
+
+    log.info("Rainfall stats:")
+    log.info("  Min  : %.1f mm/month", float(np.min(valid)))
+    log.info("  Max  : %.1f mm/month", float(np.max(valid)))
+    log.info("  Mean : %.1f mm/month", float(np.mean(valid)))
+
+    mean = float(np.mean(valid))
+    if mean < 10 or mean > 600:
+        log.warning("Mean %.1f mm seems unusual — check data", mean)
+
+
+# ── GPM IMERG Final Run ───────────────────────────────────────────────────────
+
+def download_gpm_final(year: int, month: int) -> bool:
     """
-    Download ERA5-Land total precipitation for a given month.
+    Download GPM IMERG Final Run monthly precipitation.
 
-    Requires:
-    - cdsapi installed: pip install cdsapi
-    - ~/.cdsapirc file with your CDS credentials:
-        url: https://cds.climate.copernicus.eu/api/v2
-        key: YOUR-UID:YOUR-API-KEY
+    Most accurate GPM product — bias-corrected against GPCC rain gauge data.
+    Available with ~3.5 month latency. Best for historical analysis.
 
-    ERA5-Land precipitation is in metres per hour.
-    We multiply by hours in the month to get total monthly precipitation in metres,
-    then convert to millimetres (× 1000).
+    File format: HDF5 (.HDF5)
+    Variable   : Grid/precipitation (mm/hr mean — multiply by hours in month)
+    Global grid: 0.1 degree, -180 to 180 lon, -90 to 90 lat
+    """
+    if not EARTHDATA_USER or not EARTHDATA_PASS:
+        log.warning("NASA Earthdata credentials not set — skipping GPM Final")
+        return False
 
-    Registration: https://cds.climate.copernicus.eu/user/register
+    if months_ago(year, month) < 4:
+        log.info("GPM Final Run not yet available for %d-%02d — too recent",
+                 year, month)
+        return False
+
+    month_str = f"{month:02d}"
+    days      = calendar.monthrange(year, month)[1]
+
+    filename = (
+        f"3B-MO.MS.MRG.3IMERG.{year}{month_str}01"
+        f"-S000000-E235959.{month_str}.V07B.HDF5"
+    )
+    url = (
+        f"https://gpm1.gesdisc.eosdis.nasa.gov/data"
+        f"/GPM_L3/GPM_3IMERGM.07/{year}/{filename}"
+    )
+
+    log.info("Downloading GPM IMERG Final Run %d-%02d...", year, month)
+    tmp = os.path.join(DATA_DIR, "gpm_final_tmp.HDF5")
+
+    try:
+        opener = build_earthdata_opener()
+        urllib.request.install_opener(opener)
+        urllib.request.urlretrieve(url, tmp)
+        log.info("Downloaded %.1f MB", os.path.getsize(tmp) / 1024 / 1024)
+
+        data = _parse_gpm_hdf5(tmp, days)
+        os.remove(tmp)
+
+        if data is None:
+            return False
+
+        write_raster(data, OUTPUT_PATH, "GPM IMERG Final Run V07B", year, month)
+        return True
+
+    except urllib.error.HTTPError as e:
+        log.warning("GPM Final Run HTTP %s: %s", e.code, e.reason)
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False
+    except Exception as e:
+        log.warning("GPM Final Run failed: %s", e)
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False
+
+
+# ── GPM IMERG Late Run ────────────────────────────────────────────────────────
+
+def download_gpm_late(year: int, month: int) -> bool:
+    """
+    Download GPM IMERG Late Run monthly precipitation.
+
+    Near real-time — available within ~12 hours of month end.
+    No bias correction against gauges but good accuracy.
+    Used for recent months where Final Run is not yet available.
+    """
+    if not EARTHDATA_USER or not EARTHDATA_PASS:
+        log.warning("NASA Earthdata credentials not set — skipping GPM Late")
+        return False
+
+    month_str = f"{month:02d}"
+    days      = calendar.monthrange(year, month)[1]
+
+    filename = (
+        f"3B-MO-L.MS.MRG.3IMERG.{year}{month_str}01"
+        f"-S000000-E235959.{month_str}.V07B.HDF5"
+    )
+    url = (
+        f"https://gpm1.gesdisc.eosdis.nasa.gov/data"
+        f"/GPM_L3/GPM_3IMERGML.07/{year}/{filename}"
+    )
+
+    log.info("Downloading GPM IMERG Late Run %d-%02d...", year, month)
+    tmp = os.path.join(DATA_DIR, "gpm_late_tmp.HDF5")
+
+    try:
+        opener = build_earthdata_opener()
+        urllib.request.install_opener(opener)
+        urllib.request.urlretrieve(url, tmp)
+        log.info("Downloaded %.1f MB", os.path.getsize(tmp) / 1024 / 1024)
+
+        data = _parse_gpm_hdf5(tmp, days)
+        os.remove(tmp)
+
+        if data is None:
+            return False
+
+        write_raster(data, OUTPUT_PATH, "GPM IMERG Late Run V07B", year, month)
+        return True
+
+    except urllib.error.HTTPError as e:
+        log.warning("GPM Late Run HTTP %s: %s", e.code, e.reason)
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False
+    except Exception as e:
+        log.warning("GPM Late Run failed: %s", e)
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False
+
+
+def _parse_gpm_hdf5(hdf5_path: str, days_in_month: int) -> np.ndarray:
+    """
+    Parse GPM IMERG HDF5 and return mm/month clipped to Greater Accra.
+
+    GPM HDF5 structure:
+      Grid/precipitation — shape (1, lon, lat) — units: mm/hr
+      Longitude: -180 to 180 at 0.1 degrees (3600 pixels)
+      Latitude:  -90 to 90 at 0.1 degrees  (1800 pixels)
+
+    Steps:
+    1. Read Grid/precipitation
+    2. Transpose from (lon, lat) to (lat, lon)
+    3. Flip vertically — GPM lat goes S to N, rasterio expects N to S
+    4. Convert mm/hr to mm/month by multiplying by hours in month
+    5. Clip to Greater Accra bounding box
+    """
+    try:
+        import h5py
+    except ImportError:
+        log.warning("h5py not installed — run: pip install h5py")
+        return None
+
+    try:
+        with h5py.File(hdf5_path, "r") as f:
+            precip = f["Grid/precipitation"][0, :, :]  # (lon, lat)
+            fill   = f["Grid/precipitation"].attrs.get("_FillValue", -9999.9)
+
+        # Transpose and flip
+        precip = np.flipud(precip.T)  # now (lat, lon), north at top
+
+        # Replace fill values
+        precip = precip.astype(np.float32)
+        precip[precip == fill] = np.nan
+        precip[precip < 0]     = np.nan
+
+        # Convert mm/hr → mm/month
+        hours_in_month = days_in_month * 24
+        precip = precip * hours_in_month
+
+        log.info("GPM global mean: %.1f mm/month", float(np.nanmean(precip)))
+
+        # Clip to Greater Accra
+        # Grid: lat from 90 (top) to -90 (bottom) after flipud
+        # lon from -180 (left) to 180 (right)
+        lat_min_idx = int((90 - BBOX["north"]) / 0.1)
+        lat_max_idx = int((90 - BBOX["south"]) / 0.1)
+        lon_min_idx = int((BBOX["west"] + 180) / 0.1)
+        lon_max_idx = int((BBOX["east"] + 180) / 0.1)
+
+        clipped = precip[lat_min_idx:lat_max_idx, lon_min_idx:lon_max_idx]
+        log.info("Clipped to Greater Accra: %s  mean: %.1f mm/month",
+                 clipped.shape, float(np.nanmean(clipped)))
+
+        return clipped
+
+    except Exception as e:
+        log.warning("HDF5 parsing failed: %s", e)
+        return None
+
+
+# ── ERA5 Fallback ─────────────────────────────────────────────────────────────
+
+def download_era5(year: int, month: int) -> bool:
+    """
+    Download ERA5-Land monthly precipitation as fallback.
+    Requires ~/.cdsapirc credentials file from cds.climate.copernicus.eu
     """
     try:
         import cdsapi
     except ImportError:
-        log.warning("cdsapi not installed — run: pip install cdsapi")
+        log.warning("cdsapi not installed — skipping ERA5")
         return False
 
-    # Check for credentials file
-    cdsapirc = os.path.expanduser("~/.cdsapirc")
-    if not os.path.exists(cdsapirc):
-        log.warning("CDS credentials not found at %s", cdsapirc)
-        log.warning("Register at https://cds.climate.copernicus.eu and create ~/.cdsapirc")
+    if not os.path.exists(os.path.expanduser("~/.cdsapirc")):
+        log.warning("CDS credentials not found — skipping ERA5")
         return False
 
-    import calendar
     hours_in_month = 24 * calendar.monthrange(year, month)[1]
-    month_str = f"{month:02d}"
+    month_str      = f"{month:02d}"
+    tmp_nc         = os.path.join(DATA_DIR, "era5_tmp.nc")
 
-    log.info("Downloading ERA5-Land precipitation for %d-%s...", year, month_str)
+    log.info("Downloading ERA5-Land for %d-%02d...", year, month)
 
     try:
         c = cdsapi.Client(quiet=True)
-
-        # Download to a temporary NetCDF file first
-        tmp_nc = output_path.replace(".tif", "_tmp.nc")
-
         c.retrieve(
             "reanalysis-era5-land-monthly-means",
             {
@@ -126,315 +400,181 @@ def download_era5(output_path: str, year: int, month: int) -> bool:
                 "year":         str(year),
                 "month":        month_str,
                 "time":         "00:00",
-                "area":         [               # [N, W, S, E]
-                    BBOX["north"],
-                    BBOX["west"],
-                    BBOX["south"],
-                    BBOX["east"],
+                "area":         [
+                    BBOX["north"], BBOX["west"],
+                    BBOX["south"], BBOX["east"],
                 ],
                 "format": "netcdf",
             },
             tmp_nc,
         )
 
-        # Convert NetCDF to GeoTIFF using rasterio
-        _nc_to_tiff(tmp_nc, output_path, scale_factor=hours_in_month * 1000)
+        _nc_to_tiff(tmp_nc, OUTPUT_PATH,
+                    scale=hours_in_month * 1000,
+                    source="ERA5-Land", year=year, month=month)
         os.remove(tmp_nc)
-
-        log.info("ERA5 rainfall downloaded → %s", output_path)
+        log.info("ERA5 downloaded ✓")
         return True
 
     except Exception as e:
-        log.warning("ERA5 download failed: %s", e)
-        # Clean up partial files
-        for f in [output_path, output_path.replace(".tif", "_tmp.nc")]:
-            if os.path.exists(f):
-                os.remove(f)
+        log.warning("ERA5 failed: %s", e)
+        if os.path.exists(tmp_nc):
+            os.remove(tmp_nc)
         return False
 
 
-def _nc_to_tiff(nc_path: str, tiff_path: str, scale_factor: float = 1.0) -> None:
-    """
-    Convert an ERA5 NetCDF file to a GeoTIFF.
-    Applies a scale factor to convert from m/hr to mm/month.
-    """
-    try:
-        import netCDF4 as nc
-        import rasterio
-        from rasterio.transform import from_bounds
-
-        ds = nc.Dataset(nc_path)
-
-        # ERA5 variable name for total precipitation
-        var_name = "tp"
-        data = ds.variables[var_name][0, :, :]  # First time step
-        lats = ds.variables["latitude"][:]
-        lons = ds.variables["longitude"][:]
-        ds.close()
-
-        # Apply scale factor (convert m/hr to mm/month)
-        data = (np.array(data) * scale_factor).astype(np.float32)
-
-        # ERA5 lats are descending (north to south) — rasterio expects this
-        transform = from_bounds(
-            float(lons.min()), float(lats.min()),
-            float(lons.max()), float(lats.max()),
-            data.shape[1], data.shape[0]
-        )
-
-        with rasterio.open(
-            tiff_path, "w",
-            driver="GTiff", height=data.shape[0], width=data.shape[1],
-            count=1, dtype="float32", crs="EPSG:4326",
-            transform=transform, compress="deflate",
-        ) as dst:
-            dst.write(data, 1)
-            dst.update_tags(
-                description="ERA5-Land total monthly precipitation",
-                units="mm/month",
-                year=str(nc_path),
-            )
-
-    except ImportError:
-        log.error("netCDF4 not installed — run: pip install netCDF4")
-        raise
-
-
-# ── GPM Download ──────────────────────────────────────────────────────────────
-
-def download_gpm(output_path: str, year: int, month: int) -> bool:
-    """
-    Download GPM IMERG monthly precipitation.
-
-    GPM (Global Precipitation Measurement) IMERG Final Run provides
-    monthly precipitation estimates at 0.1° resolution (~10km).
-
-    No API key needed — data is publicly available via NASA's GESDISC.
-    However some datasets require a free NASA Earthdata account.
-
-    We use the publicly accessible IMERG data via the OpenDAP endpoint.
-    If that fails we fall back to a simplified approach using the
-    public HTTP archive.
-
-    Units: mm/month (already accumulated)
-    """
-    import calendar
-
-    month_str = f"{month:02d}"
-    days_in_month = calendar.monthrange(year, month)[1]
-
-    log.info("Downloading GPM IMERG monthly precipitation for %d-%s...", year, month_str)
-
-    # GPM IMERG Final Run monthly data URL pattern
-    # Note: GPM data has ~3 month latency for the Final Run product
-    # Near-real-time (NRT) data is available with ~4 hour latency
-    base_url = (
-        "https://gpm1.gesdisc.eosdis.nasa.gov/data"
-        f"/GPM_L3/GPM_3IMERGM.07/{year}"
-        f"/3B-MO.MS.MRG.3IMERG.{year}{month_str}01-S000000-E235959"
-        f".{month_str}.V07B.HDF5"
-    )
-
-    # Alternative: use a pre-processed monthly climatology
-    # This is a simplified fallback that downloads from a public mirror
-    alt_url = (
-        f"https://pmm.nasa.gov/sites/default/files/imce"
-        f"/GPM_IMERG_{year}_{month_str}.tif"
-    )
-
-    try:
-        # Try to create a synthetic GPM-like raster from CHIRPS if direct download fails
-        return _download_gpm_via_opendap(output_path, year, month, days_in_month)
-
-    except Exception as e:
-        log.warning("GPM download failed: %s", e)
-        log.warning("Trying CHIRPS fallback...")
-        return _download_chirps(output_path, year, month)
-
-
-def _download_gpm_via_opendap(
-    output_path: str, year: int, month: int, days_in_month: int
-) -> bool:
-    """
-    Download GPM IMERG data via NASA GES DISC HTTP archive.
-    Requires free NASA Earthdata account for some products.
-    """
+def _nc_to_tiff(nc_path: str, tiff_path: str, scale: float,
+                source: str, year: int, month: int) -> None:
+    """Convert ERA5 NetCDF to GeoTIFF."""
+    import netCDF4 as nc
     import rasterio
     from rasterio.transform import from_bounds
 
-    month_str = f"{month:02d}"
+    ds   = nc.Dataset(nc_path)
+    data = ds.variables["tp"][0, :, :]
+    lats = ds.variables["latitude"][:]
+    lons = ds.variables["longitude"][:]
+    ds.close()
 
-    # GPM IMERG Late Run (available with ~12hr latency, no Earthdata login needed)
-    # This is slightly less accurate than the Final Run but freely accessible
-    url = (
-        "https://jsimpsonhttps.pps.eosdis.nasa.gov/imerg/gis/monthly"
-        f"/{year}/{month_str}/3B-MO-L.MS.MRG.3IMERG"
-        f".{year}{month_str}01.V07B.tif"
+    data = (np.array(data) * scale).astype(np.float32)
+    transform = from_bounds(
+        float(lons.min()), float(lats.min()),
+        float(lons.max()), float(lats.max()),
+        data.shape[1], data.shape[0],
     )
 
-    tmp_path = output_path.replace(".tif", "_gpm_tmp.tif")
-
-    try:
-        log.info("Fetching GPM IMERG from NASA GES DISC...")
-        urllib.request.urlretrieve(url, tmp_path)
-
-        # GPM data covers the whole globe — clip to our bounding box
-        _clip_to_bbox(tmp_path, output_path, BBOX)
-        os.remove(tmp_path)
-
-        log.info("GPM rainfall downloaded → %s", output_path)
-        return True
-
-    except Exception as e:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise e
+    with rasterio.open(
+        tiff_path, "w",
+        driver="GTiff",
+        height=data.shape[0], width=data.shape[1],
+        count=1, dtype="float32",
+        crs="EPSG:4326", transform=transform,
+        compress="deflate",
+    ) as dst:
+        dst.write(data, 1)
+        dst.update_tags(
+            description="ERA5-Land monthly precipitation",
+            source=source, units="mm/month",
+            year=str(year), month=f"{month:02d}",
+        )
 
 
-def _download_chirps(output_path: str, year: int, month: int) -> bool:
+# ── CHIRPS Fallback ───────────────────────────────────────────────────────────
+
+def download_chirps(year: int, month: int) -> bool:
     """
-    Fallback: Download CHIRPS monthly precipitation.
-
-    CHIRPS (Climate Hazards Group InfraRed Precipitation with Station data)
-    is a 35+ year quasi-global rainfall dataset at 0.05° resolution (~5km).
-    It is freely available with no authentication required.
-
-    URL pattern: https://data.chc.ucsb.edu/products/CHIRPS-2.0/global_monthly/tifs/
+    Download CHIRPS v2.0 monthly precipitation — no authentication required.
+    5km resolution, 35+ year record. Last resort fallback.
     """
-    import rasterio
-
     month_str = f"{month:02d}"
-    filename = f"chirps-v2.0.{year}.{month_str}.tif.gz"
+    filename  = f"chirps-v2.0.{year}.{month_str}.tif.gz"
     url = (
         f"https://data.chc.ucsb.edu/products/CHIRPS-2.0"
         f"/global_monthly/tifs/{filename}"
     )
 
-    tmp_gz  = output_path.replace(".tif", "_chirps.tif.gz")
-    tmp_tif = output_path.replace(".tif", "_chirps_global.tif")
+    tmp_gz  = os.path.join(DATA_DIR, "chirps_tmp.tif.gz")
+    tmp_tif = os.path.join(DATA_DIR, "chirps_tmp_global.tif")
+
+    log.info("Downloading CHIRPS v2.0 for %d-%02d...", year, month)
 
     try:
-        log.info("Downloading CHIRPS monthly precipitation (fallback)...")
         urllib.request.urlretrieve(url, tmp_gz)
 
-        # Decompress .gz file
-        import gzip
         with gzip.open(tmp_gz, "rb") as f_in:
             with open(tmp_tif, "wb") as f_out:
                 f_out.write(f_in.read())
         os.remove(tmp_gz)
 
-        # Clip to Greater Accra bounding box
-        _clip_to_bbox(tmp_tif, output_path, BBOX)
+        _clip_tif(tmp_tif, OUTPUT_PATH,
+                  source="CHIRPS v2.0", year=year, month=month)
         os.remove(tmp_tif)
-
-        log.info("CHIRPS rainfall downloaded → %s", output_path)
+        log.info("CHIRPS downloaded ✓")
         return True
 
     except Exception as e:
+        log.error("CHIRPS failed: %s", e)
         for f in [tmp_gz, tmp_tif]:
             if os.path.exists(f):
                 os.remove(f)
-        log.error("CHIRPS download failed: %s", e)
         return False
 
 
-def _clip_to_bbox(src_path: str, dst_path: str, bbox: dict) -> None:
-    """
-    Clip a global GeoTIFF to the bounding box using rasterio windowed reading.
-    Much faster than downloading the whole global file.
-    """
+def _clip_tif(src_path: str, dst_path: str,
+              source: str, year: int, month: int) -> None:
+    """Clip a global GeoTIFF to Greater Accra bounding box."""
     import rasterio
-    from rasterio.windows import from_bounds
+    from rasterio.windows import from_bounds as win_from_bounds
 
     with rasterio.open(src_path) as src:
-        window = from_bounds(
-            bbox["west"], bbox["south"],
-            bbox["east"], bbox["north"],
+        window    = win_from_bounds(
+            BBOX["west"], BBOX["south"],
+            BBOX["east"], BBOX["north"],
             src.transform,
         )
-        data = src.read(1, window=window).astype(np.float32)
+        data      = src.read(1, window=window).astype(np.float32)
         transform = src.window_transform(window)
-        profile = src.profile.copy()
+        profile   = src.profile.copy()
 
     profile.update(
-        height=data.shape[0],
-        width=data.shape[1],
-        transform=transform,
-        dtype="float32",
-        compress="deflate",
+        height=data.shape[0], width=data.shape[1],
+        transform=transform, dtype="float32", compress="deflate",
     )
 
     with rasterio.open(dst_path, "w", **profile) as dst:
         dst.write(data, 1)
         dst.update_tags(
-            description="Monthly precipitation clipped to Greater Accra",
-            units="mm/month",
+            description="CHIRPS v2.0 monthly precipitation — Greater Accra",
+            source=source, units="mm/month",
+            year=str(year), month=f"{month:02d}",
         )
-
-
-# ── Validation ────────────────────────────────────────────────────────────────
-
-def validate_rainfall(output_path: str) -> None:
-    """
-    Log basic statistics for the downloaded rainfall raster.
-    Typical June rainfall in Greater Accra: 150–250mm/month.
-    """
-    import rasterio
-
-    with rasterio.open(output_path) as src:
-        data = src.read(1).astype(float)
-        nodata = src.nodata
-        if nodata is not None:
-            data[data == nodata] = float("nan")
-        data[data < 0] = float("nan")  # Remove any negative values
-
-    valid = data[~np.isnan(data)]
-    log.info("Rainfall validation:")
-    log.info("  Shape : %s", data.shape)
-    log.info("  Min   : %.1f mm", float(np.min(valid)))
-    log.info("  Max   : %.1f mm", float(np.max(valid)))
-    log.info("  Mean  : %.1f mm", float(np.mean(valid)))
-
-    # Warn if values seem unrealistic for Greater Accra
-    if np.mean(valid) < 50 or np.mean(valid) > 500:
-        log.warning("Mean rainfall %.1f mm seems unusual for Greater Accra", float(np.mean(valid)))
-        log.warning("Expected range: 50–500 mm/month depending on season")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     log.info("=== Rainfall Ingest — Year=%d Month=%02d ===", YEAR, MONTH)
+    log.info("Priority: GPM Final → GPM Late → ERA5 → CHIRPS")
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    # Skip if file already exists
+    # Check h5py for GPM HDF5 parsing
+    try:
+        import h5py  # noqa: F401
+        log.info("h5py available ✓ — GPM IMERG enabled")
+    except ImportError:
+        log.warning("h5py not installed — GPM IMERG disabled")
+        log.warning("Run: pip install h5py")
+
+    # Skip if already exists
     if os.path.exists(OUTPUT_PATH):
         log.info("Rainfall already exists → %s", OUTPUT_PATH)
-        log.info("Delete the file to force a fresh download")
-        validate_rainfall(OUTPUT_PATH)
+        log.info("Delete to force re-download")
+        validate(OUTPUT_PATH)
         return
 
     success = False
 
-    # Try ERA5 first (unless forced to GPM)
-    if RAINFALL_SOURCE in ("auto", "era5"):
-        log.info("Attempting ERA5-Land download...")
-        success = download_era5(OUTPUT_PATH, YEAR, MONTH)
+    if RAINFALL_SOURCE in ("auto", "gpm_final", "gpm"):
+        success = download_gpm_final(YEAR, MONTH)
 
-    # Fall back to GPM/CHIRPS
-    if not success and RAINFALL_SOURCE in ("auto", "gpm"):
-        log.info("Falling back to GPM IMERG / CHIRPS...")
-        success = download_gpm(OUTPUT_PATH, YEAR, MONTH)
+    if not success and RAINFALL_SOURCE in ("auto", "gpm_late", "gpm"):
+        success = download_gpm_late(YEAR, MONTH)
+
+    if not success and RAINFALL_SOURCE in ("auto", "era5"):
+        success = download_era5(YEAR, MONTH)
+
+    if not success and RAINFALL_SOURCE in ("auto", "chirps"):
+        success = download_chirps(YEAR, MONTH)
 
     if not success:
-        log.error("All rainfall download attempts failed.")
-        log.error("Manual option: copy accra_rainfall.tif to %s", DATA_DIR)
-        log.error("ERA5 setup: https://cds.climate.copernicus.eu/api-how-to")
+        log.error("All rainfall sources failed.")
+        log.error("1. Register at https://urs.earthdata.nasa.gov — set EARTHDATA_USER/PASS in .env")
+        log.error("2. Run: pip install h5py")
+        log.error("3. Or place accra_rainfall.tif manually in %s/", DATA_DIR)
         raise SystemExit(1)
 
-    validate_rainfall(OUTPUT_PATH)
+    validate(OUTPUT_PATH)
     log.info("Rainfall ingest complete ✓")
 
 

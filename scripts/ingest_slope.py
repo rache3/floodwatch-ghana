@@ -50,6 +50,11 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Remove conflicting PROJ installation from environment (PostgreSQL/PostGIS conflict)
+# Forces rasterio to use its own bundled PROJ data instead of the system installation
+os.environ.pop("PROJ_LIB", None)
+os.environ.pop("PROJ_DATA", None)
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 DATA_DIR = os.getenv("DATA_DIR", "data")
 DEM_PATH   = os.path.join(DATA_DIR, "accra_dem.tif")
@@ -75,7 +80,6 @@ def derive_slope(dem_path: str, output_path: str) -> None:
     5. Write output GeoTIFF with same projection as input
     """
     import rasterio
-    from rasterio.enums import Resampling
 
     log.info("Loading DEM from %s...", dem_path)
 

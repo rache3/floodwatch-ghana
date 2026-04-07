@@ -30,7 +30,6 @@ Usage:
 """
 
 import os
-import sys
 import logging
 
 try:
@@ -108,7 +107,6 @@ def upload_file(client, local_path: str, gcs_key: str, bucket_name: str) -> bool
 
     Returns True on success, False on failure.
     """
-    from google.cloud import storage
 
     if not os.path.exists(local_path):
         log.error("File not found: %s", local_path)

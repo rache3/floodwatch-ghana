@@ -59,6 +59,11 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# Remove conflicting PROJ installation from environment (PostgreSQL/PostGIS conflict)
+# Forces rasterio to use its own bundled PROJ data instead of the system installation
+os.environ.pop("PROJ_LIB", None)
+os.environ.pop("PROJ_DATA", None)
+
 # ── Configuration ─────────────────────────────────────────────────────────────
 DATA_DIR         = os.getenv("DATA_DIR", "data")
 OUTPUT_RAW_PATH  = os.path.join(DATA_DIR, "accra_landcover_raw.tif")
@@ -171,7 +176,7 @@ def clip_and_resample(src_path: str, dst_path: str, bbox: dict,
     import rasterio
     from rasterio.windows import from_bounds
     from rasterio.enums import Resampling
-    from rasterio.warp import reproject, calculate_default_transform
+    from rasterio.warp import reproject
 
     log.info("Clipping WorldCover to Greater Accra bounding box...")
 

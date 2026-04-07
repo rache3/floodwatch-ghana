@@ -1,0 +1,56 @@
+# .github/workflows/ci.yml
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: pip install ruff
+
+      - name: Lint Python scripts
+        run: ruff check scripts/
+
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required scripts exist
+        run: |
+          for f in \
+            scripts/ingest.py \
+            scripts/ingest_dem.py \
+            scripts/ingest_slope.py \
+            scripts/ingest_rainfall.py \
+            scripts/ingest_landcover.py \
+            scripts/ingest_waterbodies.py \
+            scripts/flood_risk.py \
+            scripts/upload_gcs.py; do
+            if [ ! -f "$f" ]; then
+              echo "Missing: $f"
+              exit 1
+            fi
+          done
+          echo "All required scripts present ✓"
+
+      - name: Check index.html exists
+        run: |
+          if [ ! -f "docs/index.html" ]; then
+            echo "Missing: docs/index.html"
+            exit 1
+          fi
+          echo "index.html present ✓"
