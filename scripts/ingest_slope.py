@@ -37,7 +37,6 @@ import os
 import logging
 import numpy as np
 
-
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -50,8 +49,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
-# Remove PostgreSQL's conflicting PROJ installation from the environment
-# This forces rasterio to use its own bundled PROJ data
+
+# Remove conflicting PROJ installation from environment (PostgreSQL/PostGIS conflict)
+# Forces rasterio to use its own bundled PROJ data instead of the system installation
 os.environ.pop("PROJ_LIB", None)
 os.environ.pop("PROJ_DATA", None)
 
@@ -80,7 +80,6 @@ def derive_slope(dem_path: str, output_path: str) -> None:
     5. Write output GeoTIFF with same projection as input
     """
     import rasterio
-    from rasterio.enums import Resampling
 
     log.info("Loading DEM from %s...", dem_path)
 

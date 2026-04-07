@@ -134,7 +134,7 @@ def normalise(arr, invert=False):
         return np.zeros_like(arr, dtype=np.float32)
     norm = (arr - a_min) / (a_max - a_min)
     return (1.0 - norm).astype(np.float32) if invert else norm.astype(np.float32)
-
+ 
 
 def mask_to_boundary(src_path: str, dst_path: str) -> None:
     """

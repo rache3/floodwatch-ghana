@@ -222,7 +222,7 @@ def download_gpm_final(year: int, month: int) -> bool:
     )
 
     log.info("Downloading GPM IMERG Final Run %d-%02d...", year, month)
-    tmp = os.path.join(DATA_DIR, f"gpm_final_tmp.HDF5")
+    tmp = os.path.join(DATA_DIR, "gpm_final_tmp.HDF5")
 
     try:
         opener = build_earthdata_opener()
@@ -278,7 +278,7 @@ def download_gpm_late(year: int, month: int) -> bool:
     )
 
     log.info("Downloading GPM IMERG Late Run %d-%02d...", year, month)
-    tmp = os.path.join(DATA_DIR, f"gpm_late_tmp.HDF5")
+    tmp = os.path.join(DATA_DIR, "gpm_late_tmp.HDF5")
 
     try:
         opener = build_earthdata_opener()
@@ -473,8 +473,8 @@ def download_chirps(year: int, month: int) -> bool:
         f"/global_monthly/tifs/{filename}"
     )
 
-    tmp_gz  = os.path.join(DATA_DIR, f"chirps_tmp.tif.gz")
-    tmp_tif = os.path.join(DATA_DIR, f"chirps_tmp_global.tif")
+    tmp_gz  = os.path.join(DATA_DIR, "chirps_tmp.tif.gz")
+    tmp_tif = os.path.join(DATA_DIR, "chirps_tmp_global.tif")
 
     log.info("Downloading CHIRPS v2.0 for %d-%02d...", year, month)
 

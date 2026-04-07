@@ -32,11 +32,8 @@ Usage:
 import os
 import logging
 import json
-import urllib.request
-import urllib.error
+import urllib.request  # noqa: F401
 import numpy as np
-
-
 
 try:
     from dotenv import load_dotenv
@@ -50,11 +47,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
-# Remove PostgreSQL's conflicting PROJ installation from the environment
-# This forces rasterio to use its own bundled PROJ data
+
+# Remove conflicting PROJ installation from environment (PostgreSQL/PostGIS conflict)
+# Forces rasterio to use its own bundled PROJ data instead of the system installation
 os.environ.pop("PROJ_LIB", None)
 os.environ.pop("PROJ_DATA", None)
-
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 DATA_DIR    = os.getenv("DATA_DIR", "data")
@@ -125,9 +122,6 @@ def download_osm_water(output_geojson: str) -> bool:
 
     query = build_overpass_query(BBOX)
     url = "https://overpass-api.de/api/interpreter"
-
-    # POST request with the query as form data
-    query_bytes = urllib.parse.urlencode({"data": query}).encode("utf-8")
 
     try:
         import urllib.parse
@@ -242,8 +236,6 @@ def rasterize_water(geojson_path: str, reference_dem: str,
     """
     import rasterio
     from rasterio.features import rasterize as rio_rasterize
-    from rasterio.transform import from_bounds
-    from shapely.geometry import shape
 
     log.info("Rasterizing water features onto DEM grid...")
 

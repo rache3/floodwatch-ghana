@@ -64,12 +64,15 @@ OUTPUT_DIR    = os.getenv("OUTPUT_DIR",    "output")
 # Districts/areas documented as flooded during May 18 2025 event
 # Source: The Watchers, GDACS, local media reports
 FLOODED_AREAS = [
-    "weija",            # WeijaGbawe — Rank 2
-    "gacentral",        # Kaneshie is in GaCentral — Rank 3
-    "accra",            # Adabraka is in Accra — Rank 4
-    "la-nkwantanang",   # Oyarifa and Abokobi — Rank 24
-    "adenta",           # Adentan-Dodowa — Rank 25
-    "tema",             # Tema — Rank 20
+    "weija",
+    "kaneshie",
+    "adabraka",
+    "adentan",
+    "adenta",
+    "oyarifa",
+    "tema",
+    "abokobi",
+    "dodowa",
 ]
 
 # ── Zonal Statistics ──────────────────────────────────────────────────────────
@@ -81,7 +84,6 @@ def extract_district_stats(risk_path: str, districts_path: str) -> list:
     """
     import rasterio
     from rasterio.mask import mask as rio_mask
-    from shapely.geometry import shape
 
     log.info("Loading risk raster: %s", risk_path)
     log.info("Loading districts: %s", districts_path)
@@ -113,8 +115,6 @@ def extract_district_stats(risk_path: str, districts_path: str) -> list:
             )
 
             try:
-                geom_shape = shape(geometry)
-
                 # Mask raster to district boundary
                 masked, _ = rio_mask(
                     src,

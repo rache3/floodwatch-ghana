@@ -45,8 +45,6 @@ import logging
 import urllib.request
 import urllib.error
 import numpy as np
-import os
-
 
 try:
     from dotenv import load_dotenv
@@ -60,11 +58,11 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
-# Remove PostgreSQL's conflicting PROJ installation from the environment
-# This forces rasterio to use its own bundled PROJ data
+
+# Remove conflicting PROJ installation from environment (PostgreSQL/PostGIS conflict)
+# Forces rasterio to use its own bundled PROJ data instead of the system installation
 os.environ.pop("PROJ_LIB", None)
 os.environ.pop("PROJ_DATA", None)
-
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 DATA_DIR         = os.getenv("DATA_DIR", "data")
@@ -178,7 +176,7 @@ def clip_and_resample(src_path: str, dst_path: str, bbox: dict,
     import rasterio
     from rasterio.windows import from_bounds
     from rasterio.enums import Resampling
-    from rasterio.warp import reproject, calculate_default_transform
+    from rasterio.warp import reproject
 
     log.info("Clipping WorldCover to Greater Accra bounding box...")
 
