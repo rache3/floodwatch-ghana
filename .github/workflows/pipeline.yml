@@ -94,7 +94,7 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
-            -f docker/Dockerfile \
+            -f docker/Dockerfile.pipeline \
             -t $IMAGE:${{ steps.tag.outputs.tag }} \
             -t $IMAGE:latest \
             .
