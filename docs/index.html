@@ -166,13 +166,87 @@
       padding: 10px 14px;
     }
     .maplibregl-popup-tip { border-top-color: #1a1d26; }
+
+    /* About panel */
+    #about-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(10,12,18,0.8);
+      z-index: 2000;
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+    }
+    #about-overlay.open { display: flex; }
+    #about-panel {
+      background: #1a1d26;
+      border: 1px solid #2a2d3a;
+      border-radius: 12px;
+      padding: 28px 30px;
+      max-width: 540px;
+      width: 92%;
+      max-height: 88vh;
+      overflow-y: auto;
+      position: relative;
+      color: #e8e6de;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .about-close {
+      position: absolute;
+      top: 14px; right: 14px;
+      background: transparent;
+      border: 1px solid #2a2d3a;
+      color: #7a7870;
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .about-close:hover { color: #e8e6de; }
+    .about-section {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #2a2d3a;
+    }
+    .about-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .about-section h3 {
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: #f59e0b; margin-bottom: 8px;
+    }
+    .about-section p { font-size: 13px; line-height: 1.65; color: #b8b6ae; }
+    .score-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 10px; }
+    .score-card { border-radius: 7px; padding: 10px; text-align: center; }
+    .score-card.low  { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); }
+    .score-card.mod  { background: rgba(251,191,36,0.08);  border: 1px solid rgba(251,191,36,0.2); }
+    .score-card.high { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); }
+    .score-card .sval { display:block; font-size:13px; font-weight:600; margin-bottom:3px; }
+    .score-card.low  .sval { color: #4ade80; }
+    .score-card.mod  .sval { color: #fbbf24; }
+    .score-card.high .sval { color: #f87171; }
+    .score-card .slbl { font-size: 11px; color: #7a7870; }
+    .layer-tbl { width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; }
+    .layer-tbl th { text-align:left; color:#7a7870; font-weight:500; padding:4px 0; border-bottom:1px solid #2a2d3a; }
+    .layer-tbl td { padding:5px 0; border-bottom:1px solid rgba(42,45,58,0.5); color:#b8b6ae; }
+    .layer-tbl td:last-child { text-align:right; color:#f59e0b; }
+    .about-links { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .about-link {
+      display:inline-flex; align-items:center; gap:5px;
+      background:#0f1117; border:1px solid #2a2d3a; border-radius:6px;
+      padding:6px 12px; font-size:12px; color:#60a5fa; text-decoration:none;
+    }
+    .about-link:hover { border-color: #60a5fa; }
   </style>
 </head>
 <body>
 
 <header>
   <h1>Flood Risk Assessment — Greater Accra Region</h1>
-  <span class="meta">Data: SRTM DEM · CHIRPS Rainfall · ESA WorldCover · OSM | GeoBuilders Africa</span>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="meta">Data: SRTM DEM · CHIRPS Rainfall · ESA WorldCover · OSM | GeoBuilders Africa</span>
+    <button id="btn-about" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;flex-shrink:0">About this map</button>
+  </div>
 </header>
 
 <div id="map">
@@ -391,7 +465,7 @@ map.on("load", () => {
     } catch (err) {
       popup.setHTML(`
         <strong>${name}</strong><br/>
-        <span style="color:#7a7870;font-size:11px">Statistics unavailable</span>
+        <span style="color:#7a7870;font-size:11px">Statistics temporarily unavailable. Click district again to retry.</span>
       `);
     }
   });
@@ -422,5 +496,78 @@ document.getElementById("opacity").addEventListener("input", (e) => {
   document.getElementById("opacity-val").textContent = Math.round(val * 100) + "%";
 });
 </script>
+
+<!-- About panel overlay -->
+<div id="about-overlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div id="about-panel">
+    <button class="about-close" onclick="document.getElementById('about-overlay').classList.remove('open')">✕</button>
+    <div style="margin-bottom:20px">
+      <div style="font-size:17px;font-weight:600;margin-bottom:4px">FloodWatch Ghana</div>
+      <div style="font-size:12px;color:#7a7870">GeoBuilders Africa · v1.0 · Greater Accra Region</div>
+    </div>
+
+    <div class="about-section">
+      <h3>What is this map?</h3>
+      <p>FloodWatch Ghana is an open source flood risk intelligence system for Greater Accra. It combines five satellite datasets into a single risk score (0–1) for each of the region's 29 districts, updated monthly. A higher score means a district is more structurally vulnerable to flooding.</p>
+    </div>
+
+    <div class="about-section">
+      <h3>What does the risk score mean?</h3>
+      <div class="score-grid">
+        <div class="score-card low"><span class="sval">0.0 – 0.33</span><span class="slbl">Low Risk</span></div>
+        <div class="score-card mod"><span class="sval">0.33 – 0.67</span><span class="slbl">Moderate Risk</span></div>
+        <div class="score-card high"><span class="sval">0.67 – 1.0</span><span class="slbl">High Risk</span></div>
+      </div>
+      <p style="margin-top:10px">The score reflects <strong style="color:#e8e6de">chronic structural vulnerability</strong> — areas that are low-lying, poorly drained, near water bodies, and covered by impervious surfaces. It does not predict individual rainfall events.</p>
+    </div>
+
+    <div class="about-section">
+      <h3>How is the score calculated?</h3>
+      <table class="layer-tbl">
+        <tr><th>Data layer</th><th>Source</th><th>Weight</th></tr>
+        <tr><td>Elevation (DEM)</td><td>NASA SRTM</td><td>30%</td></tr>
+        <tr><td>Precipitation</td><td>CHIRPS / GPM IMERG</td><td>25%</td></tr>
+        <tr><td>Terrain slope</td><td>Derived from SRTM</td><td>20%</td></tr>
+        <tr><td>Land cover</td><td>ESA WorldCover 2021</td><td>15%</td></tr>
+        <tr><td>Water proximity</td><td>OpenStreetMap</td><td>10%</td></tr>
+      </table>
+    </div>
+
+    <div class="about-section">
+      <h3>Validation — May 2025</h3>
+      <p>FloodWatch v1.0 underwent qualitative validation against the May 18, 2025 Greater Accra flood event (132mm rainfall, 4 deaths, 3,000+ displaced). Flooded districts averaged a mean risk of 0.598 vs 0.587 for non-flooded districts. All 3 chronically high-risk flood zones were correctly ranked in the top 4 districts. Quantitative Sentinel-1 SAR validation is planned for v1.1.</p>
+    </div>
+
+    <div class="about-section">
+      <h3>How to use</h3>
+      <p>Click any district to see detailed risk statistics. Use the layer controls (top left) to toggle layers and adjust opacity. The map updates monthly as new rainfall data becomes available.</p>
+    </div>
+
+    <div class="about-section">
+      <h3>Built by</h3>
+      <p>FloodWatch Ghana is an open source initiative by <strong style="color:#e8e6de">GeoBuilders Africa</strong>, founded by Rachel Atia, a Geospatial Data Engineer based in Accra, Ghana.</p>
+      <div class="about-links">
+        <a class="about-link" href="https://geobuildersafrica.com" target="_blank">🌍 GeoBuilders Africa</a>
+        <a class="about-link" href="https://github.com/rache3/flood-risk-mapping-greater-accra" target="_blank">⭐ GitHub</a>
+        <a class="about-link" href="mailto:floodwatch@geobuildersafrica.com">✉ Contact</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// About button
+document.getElementById('btn-about').addEventListener('click', () => {
+  document.getElementById('about-overlay').classList.add('open');
+});
+
+// TiTiler warmup — fires silent request to reduce cold start latency
+const _TITILER = "https://titiler-z2qegb4nha-uc.a.run.app";
+const _COG = "https://storage.googleapis.com/accra-flood-risk/rasters/flood_risk_map.cog.tif?v=4";
+setTimeout(() => {
+  fetch(`${_TITILER}/cog/info?url=${encodeURIComponent(_COG)}`).catch(() => {});
+}, 1500);
+</script>
+
 </body>
 </html>
