@@ -36,6 +36,10 @@ Qualitative validation compares the model's district-level risk rankings against
 
 **Result: MODERATE ✓**
 
+Flooded districts mean risk score: **0.5983** vs non-flooded: **0.5874** (+0.0109)
+
+All 3 chronically high-risk flood zones correctly ranked in the top 4 districts. The 4 districts that were missed (Adenta, La-Nkwantanang-Madina, Tema, TemaWest) experienced flash flooding driven by extreme rainfall (132mm) — a separate risk category not captured by the static structural model. This is an expected limitation of v1.0 and informs the roadmap for v1.1.
+
 | District | Rank | Percentile | Flooded May 2025 |
 |---|---|---|---|
 | WeijaGbawe | 2 of 29 | top 93% | 🔴 YES |
