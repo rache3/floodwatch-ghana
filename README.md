@@ -3,7 +3,8 @@
 
 **Author:** Rachel Atia · GeoBuilders Africa  
 **Live map:** https://floodwatch.geobuildersafrica.com  
-**Company:** https://geobuildersafrica.com
+**Company:** https://geobuildersafrica.com  
+**GitHub:** https://github.com/rache3/flood-risk-mapping-greater-accra
 
 ---
 
@@ -23,6 +24,34 @@ Greater Accra is the pilot region. The pipeline is designed to scale across all 
 - All 29 districts of Greater Accra with boundary overlays
 - Click any district for mean, max, median, std deviation, and risk distribution
 - Layer toggles and opacity control
+- Validation badge — validated against May 18, 2025 Greater Accra floods
+
+---
+
+## Validation
+
+FloodWatch Ghana v1.0 underwent **qualitative validation** against the **May 18, 2025 Greater Accra flood event** — 132.20mm of rainfall, 4 deaths, 3,000+ displaced (Source: The Watchers, GDACS, Copernicus EMS).
+
+Qualitative validation compares the model's district-level risk rankings against documented flood locations from news reports and official sources. It does not use satellite-derived flood extent maps — that quantitative validation is planned for v1.1 using Sentinel-1 SAR imagery via Google Earth Engine.
+
+**Result: MODERATE ✓**
+
+| District | Rank | Percentile | Flooded May 2025 |
+|---|---|---|---|
+| WeijaGbawe | 2 of 29 | top 93% | 🔴 YES |
+| GaCentral (Kaneshie) | 3 of 29 | top 90% | 🔴 YES |
+| Accra (Adabraka) | 4 of 29 | top 86% | 🔴 YES |
+| Tema | 20 of 29 | top 31% | 🔴 YES |
+| TemaWest | 21 of 29 | top 28% | 🔴 YES |
+| La-Nkwantanang-Madina (Oyarifa/Abokobi) | 24 of 29 | top 17% | 🔴 YES |
+| Adenta | 25 of 29 | top 14% | 🔴 YES |
+
+**Flooded districts mean risk: 0.5983 vs non-flooded: 0.5874**
+
+3 of 7 flooded districts ranked in the top 4 risk zones. Districts that ranked lower but flooded (Adenta, La-Nkwantanang-Madina) experienced **flash flooding** driven by extreme rainfall rather than chronic structural vulnerability — a known limitation of the current static model.
+
+Validation script: `scripts/validate_flood_risk.py`  
+Full results: `output/validation_may2025.json`
 
 ---
 
@@ -36,17 +65,15 @@ Risk = 0.30 × (1 − norm_DEM)
      + 0.10 × (1 − norm_Waterbodies)
 ```
 
-| Layer | Weight | Direction | Rationale |
-|---|---|---|---|
-| Elevation (SRTM DEM) | 30% | Inverted | Low-lying areas accumulate water |
-| Precipitation (ERA5) | 25% | Normal | Higher rainfall increases runoff |
-| Terrain slope | 20% | Inverted | Flat terrain drains poorly |
-| Land cover imperviousness | 15% | Normal | Impervious surfaces increase runoff |
-| Distance to water bodies | 10% | Inverted | Proximity to rivers and lagoons increases risk |
+| Layer | Weight | Direction | Source | Rationale |
+|---|---|---|---|---|
+| Elevation (SRTM DEM) | 30% | Inverted | OpenTopography | Low-lying areas accumulate water |
+| Precipitation | 25% | Normal | CHIRPS v2.0 / GPM IMERG | Higher rainfall increases runoff |
+| Terrain slope | 20% | Inverted | Derived from SRTM | Flat terrain drains poorly |
+| Land cover imperviousness | 15% | Normal | ESA WorldCover 2021 | Impervious surfaces increase runoff |
+| Distance to water bodies | 10% | Inverted | OpenStreetMap | Proximity to rivers increases risk |
 
-Each layer is min-max normalised to [0, 1] before combination. The composite score is reclassified into percentile-based risk tiers using the 25th and 75th percentiles of the local distribution, producing three categories: low (0–0.33), moderate (0.33–0.67), and high (0.67–1.0).
-
-Output range: **0 (low risk) → 1 (high risk)**
+Each layer is min-max normalised to [0, 1]. The composite score uses percentile-based reclassification at p25/p75, producing three risk tiers: low (0–0.33), moderate (0.33–0.67), and high (0.67–1.0).
 
 ---
 
@@ -54,15 +81,16 @@ Output range: **0 (low risk) → 1 (high risk)**
 
 ```
 Input data sources
-(OpenTopography · ERA5 · ESA S3 · OpenStreetMap Overpass API)
+(OpenTopography · CHIRPS/GPM · ESA S3 · OpenStreetMap Overpass API)
               │
               ▼
     scripts/ingest.py
     ├── ingest_dem.py          ← SRTM 30m DEM via OpenTopography API
     ├── ingest_slope.py        ← Slope derived from DEM using NumPy gradient
-    ├── ingest_rainfall.py     ← ERA5-Land monthly precipitation (GPM fallback)
+    ├── ingest_rainfall.py     ← GPM IMERG Final → Late → ERA5 → CHIRPS fallback
     ├── ingest_landcover.py    ← ESA WorldCover 2021 → imperviousness fraction
-    └── ingest_waterbodies.py  ← OSM water features → distance raster
+    ├── ingest_waterbodies.py  ← OSM water features → distance raster
+    └── ingest_aod.py          ← MODIS/MERRA-2 AOD → quality flagging (optional)
               │
               ▼
     scripts/flood_risk.py
@@ -86,7 +114,7 @@ Input data sources
     docs/index.html            ← MapLibre GL JS web map (GitHub Pages)
 ```
 
-Orchestrated by **GitHub Actions** on a monthly cron schedule. Authentication uses **Workload Identity Federation** — no API keys or secrets stored in the repository.
+Orchestrated by **GitHub Actions** on a monthly cron schedule. Authentication uses **Workload Identity Federation** — no API keys stored in the repository.
 
 ---
 
@@ -96,29 +124,32 @@ Orchestrated by **GitHub Actions** on a monthly cron schedule. Authentication us
 flood-risk-mapping-greater-accra/
 ├── .github/
 │   └── workflows/
-│       └── pipeline.yml       # GitHub Actions — monthly + manual trigger
+│       ├── ci.yml             # Lint, structure validation, syntax checks
+│       └── pipeline.yml       # Monthly pipeline — build, process, upload
 ├── scripts/
-│   ├── ingest.py              # Orchestrator — runs all ingest scripts in order
+│   ├── ingest.py              # Orchestrator
 │   ├── ingest_dem.py          # SRTM DEM download
-│   ├── ingest_slope.py        # Slope derivation from DEM
-│   ├── ingest_rainfall.py     # ERA5 / GPM precipitation download
-│   ├── ingest_landcover.py    # ESA WorldCover download and processing
-│   ├── ingest_waterbodies.py  # OSM water features and distance raster
-│   ├── flood_risk.py          # Risk model — normalise, score, mask, COG
-│   └── upload_gcs.py          # Upload outputs to Google Cloud Storage
-├── titiler/
-│   └── main.py                # TiTiler FastAPI tile server
+│   ├── ingest_slope.py        # Slope derivation
+│   ├── ingest_rainfall.py     # GPM IMERG / CHIRPS precipitation
+│   ├── ingest_landcover.py    # ESA WorldCover
+│   ├── ingest_waterbodies.py  # OSM water features
+│   ├── ingest_aod.py          # AOD quality flagging
+│   ├── flood_risk.py          # Risk model
+│   ├── upload_gcs.py          # GCS upload
+│   └── validate_flood_risk.py # Validation against historical flood events
 ├── terraform/
-│   ├── main.tf                # GCP infrastructure as code
+│   ├── main.tf
 │   ├── variables.tf
-│   ├── outputs.tf
-│   └── terraform.tfvars       # Gitignored
+│   └── outputs.tf
 ├── docs/
 │   └── index.html             # MapLibre GL JS web map
-├── data/                      # Input rasters (auto-downloaded, gitignored)
-├── output/                    # Generated outputs (gitignored)
+├── output/
+│   └── validation_may2025.json # Validation results
+├── data/
+│   └── gadm41_GHA_accra.json  # District boundaries
 ├── .env.example               # Configuration template
-└── PIPELINE_GUIDE.md          # Full setup and deployment guide
+├── requirements.txt
+└── README.md
 ```
 
 ---
@@ -126,35 +157,34 @@ flood-risk-mapping-greater-accra/
 ## Quickstart — run locally
 
 ```bash
-# Clone
 git clone https://github.com/rache3/flood-risk-mapping-greater-accra.git
 cd flood-risk-mapping-greater-accra
 
-# Install dependencies
-pip install rasterio numpy scipy shapely python-dotenv google-cloud-storage
+pip install -r requirements.txt
 
-# Configure
 cp .env.example .env
-# Edit .env with your GCP project ID, bucket name, bounding box
+# Edit .env with your credentials
 
-# Run the full pipeline
 python scripts/ingest.py        # Download all input data
-python scripts/flood_risk.py    # Process, mask, and write COG
+python scripts/flood_risk.py    # Process and write COG
 python scripts/upload_gcs.py    # Upload to GCS
+
+# Optional: run validation
+python scripts/validate_flood_risk.py
 ```
 
 ---
 
 ## Data sources
 
-| Dataset | Source | Resolution | Licence |
+| Dataset | Source | Resolution | Auth |
 |---|---|---|---|
-| Elevation (DEM) | SRTM GL1 via OpenTopography | 30m | Free, no API key |
-| Precipitation | ERA5-Land via ECMWF CDS | ~9km | Free research use |
-| Slope | Derived from SRTM DEM | 30m | — |
+| Elevation (DEM) | SRTM GL1 via OpenTopography | 30m | Free API key |
+| Precipitation | CHIRPS v2.0 / GPM IMERG | 5km / 10km | Free / Earthdata |
+| Slope | Derived from SRTM | 30m | — |
 | Land cover | ESA WorldCover 2021 | 10m | Free |
 | Water bodies | OpenStreetMap Overpass API | Variable | Open |
-| District boundaries | GADM v4.1 | — | Free research use |
+| District boundaries | GADM v4.1 | — | Free |
 
 ---
 
@@ -163,17 +193,21 @@ python scripts/upload_gcs.py    # Upload to GCS
 | Service | Role |
 |---|---|
 | Google Cloud Run | TiTiler tile server |
-| Google Cloud Storage | COG raster and GeoJSON storage |
-| GitHub Actions | Pipeline orchestration |
+| Google Cloud Storage | COG raster and GeoJSON |
+| GitHub Actions | CI and monthly pipeline |
 | GitHub Pages | Web map hosting |
 | Terraform | Infrastructure as code |
 | Workload Identity Federation | Keyless GCP authentication |
 
 ---
 
-## Deployment
+## Known limitations
 
-See [PIPELINE_GUIDE.md](PIPELINE_GUIDE.md) for the full setup guide including Terraform infrastructure provisioning, GitHub Actions configuration, and Workload Identity Federation setup.
+- **Validation is qualitative** — district risk rankings compared against news-reported flood locations. Quantitative validation using Sentinel-1 SAR flood extent maps is planned for v1.1
+- Static risk model captures chronic structural vulnerability — not event-driven flash flooding
+- Districts like Adenta and La-Nkwantanang-Madina may flood under extreme rainfall events not predicted by the static model
+- Real-time rainfall thresholds via GPM IMERG Late Run are planned for v1.1
+- Greater Accra pilot only — expansion to other Ghana regions in progress
 
 ---
 
