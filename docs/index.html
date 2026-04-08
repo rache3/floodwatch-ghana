@@ -3,571 +3,130 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Flood Risk Assessment Map — Greater Accra Region</title>
+  <title>Flood Risk Assessment Map - Greater Accra Region</title>
 
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
 
   <link href="https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="./styles.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
-
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0f1117;
-      color: #e8e6de;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    header {
-      padding: 12px 20px;
-      background: #1a1d26;
-      border-bottom: 1px solid #2a2d3a;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-    header h1 { font-size: 15px; font-weight: 500; color: #e8e6de; }
-    header .meta { font-size: 12px; color: #7a7870; }
-    #map { flex: 1; position: relative; }
-
-    .legend {
-      position: absolute;
-      bottom: 32px;
-      right: 12px;
-      background: rgba(26, 29, 38, 0.92);
-      border: 1px solid #2a2d3a;
-      border-radius: 8px;
-      padding: 14px 16px;
-      min-width: 180px;
-      backdrop-filter: blur(4px);
-      z-index: 1000;
-    }
-    .legend h3 {
-      font-size: 12px;
-      font-weight: 500;
-      color: #b8b6ae;
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .legend-bar {
-      width: 100%;
-      height: 12px;
-      border-radius: 4px;
-      background: linear-gradient(to right, #0d0887, #6a00a8, #b12a90, #e16462, #fca636, #f0f921);
-      margin-bottom: 4px;
-    }
-    .legend-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: #7a7870;
-    }
-
-    .controls {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(26, 29, 38, 0.92);
-      border: 1px solid #2a2d3a;
-      border-radius: 8px;
-      padding: 12px 14px;
-      backdrop-filter: blur(4px);
-      z-index: 1000;
-    }
-    .controls h3 {
-      font-size: 11px;
-      font-weight: 500;
-      color: #b8b6ae;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 8px;
-    }
-    .toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 6px;
-      font-size: 13px;
-      color: #c8c6be;
-      cursor: pointer;
-    }
-    .toggle-row input[type="checkbox"] { cursor: pointer; }
-    .opacity-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 10px;
-      font-size: 12px;
-      color: #7a7870;
-    }
-    .opacity-row input[type="range"] { flex: 1; accent-color: #7a6de8; }
-
-    /* Validation badge */
-    #validation-badge {
-      position: absolute;
-      bottom: 40px;
-      left: 12px;
-      z-index: 1000;
-      background: rgba(15, 23, 42, 0.92);
-      color: #f8fafc;
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 12px;
-      max-width: 260px;
-      border-left: 3px solid #f59e0b;
-      backdrop-filter: blur(4px);
-      box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-    }
-    #validation-badge .badge-title {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      color: #f59e0b;
-      text-transform: uppercase;
-      margin-bottom: 4px;
-    }
-    #validation-badge .badge-event {
-      font-weight: 600;
-      font-size: 12px;
-      margin-bottom: 3px;
-    }
-    #validation-badge .badge-desc {
-      color: #94a3b8;
-      font-size: 11px;
-      line-height: 1.5;
-    }
-    #validation-badge .badge-link {
-      display: inline-block;
-      margin-top: 6px;
-      color: #60a5fa;
-      font-size: 11px;
-      text-decoration: none;
-      border-bottom: 1px solid rgba(96,165,250,0.3);
-    }
-    #validation-badge .badge-link:hover {
-      color: #93c5fd;
-      border-bottom-color: rgba(147,197,253,0.5);
-    }
-
-    .maplibregl-popup-content {
-      background: #1a1d26;
-      color: #e8e6de;
-      border: 1px solid #2a2d3a;
-      border-radius: 8px;
-      font-size: 13px;
-      padding: 10px 14px;
-    }
-    .maplibregl-popup-tip { border-top-color: #1a1d26; }
-
-    /* About panel */
-    #about-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(10,12,18,0.8);
-      z-index: 2000;
-      backdrop-filter: blur(4px);
-      align-items: center;
-      justify-content: center;
-    }
-    #about-overlay.open { display: flex; }
-    #about-panel {
-      background: #1a1d26;
-      border: 1px solid #2a2d3a;
-      border-radius: 12px;
-      padding: 28px 30px;
-      max-width: 540px;
-      width: 92%;
-      max-height: 88vh;
-      overflow-y: auto;
-      position: relative;
-      color: #e8e6de;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    .about-close {
-      position: absolute;
-      top: 14px; right: 14px;
-      background: transparent;
-      border: 1px solid #2a2d3a;
-      color: #7a7870;
-      width: 28px; height: 28px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    .about-close:hover { color: #e8e6de; }
-    .about-section {
-      margin-bottom: 20px;
-      padding-bottom: 20px;
-      border-bottom: 1px solid #2a2d3a;
-    }
-    .about-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-    .about-section h3 {
-      font-size: 11px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.08em;
-      color: #f59e0b; margin-bottom: 8px;
-    }
-    .about-section p { font-size: 13px; line-height: 1.65; color: #b8b6ae; }
-    .score-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 10px; }
-    .score-card { border-radius: 7px; padding: 10px; text-align: center; }
-    .score-card.low  { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); }
-    .score-card.mod  { background: rgba(251,191,36,0.08);  border: 1px solid rgba(251,191,36,0.2); }
-    .score-card.high { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); }
-    .score-card .sval { display:block; font-size:13px; font-weight:600; margin-bottom:3px; }
-    .score-card.low  .sval { color: #4ade80; }
-    .score-card.mod  .sval { color: #fbbf24; }
-    .score-card.high .sval { color: #f87171; }
-    .score-card .slbl { font-size: 11px; color: #7a7870; }
-    .layer-tbl { width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; }
-    .layer-tbl th { text-align:left; color:#7a7870; font-weight:500; padding:4px 0; border-bottom:1px solid #2a2d3a; }
-    .layer-tbl td { padding:5px 0; border-bottom:1px solid rgba(42,45,58,0.5); color:#b8b6ae; }
-    .layer-tbl td:last-child { text-align:right; color:#f59e0b; }
-    .about-links { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
-    .about-link {
-      display:inline-flex; align-items:center; gap:5px;
-      background:#0f1117; border:1px solid #2a2d3a; border-radius:6px;
-      padding:6px 12px; font-size:12px; color:#60a5fa; text-decoration:none;
-    }
-    .about-link:hover { border-color: #60a5fa; }
-  </style>
 </head>
 <body>
+  <header>
+    <h1>Flood Risk Assessment - Greater Accra Region</h1>
+    <div class="header-actions">
+      <span class="meta">Data: SRTM DEM - CHIRPS Rainfall - ESA WorldCover - OSM | GeoBuilders Africa</span>
+      <button id="btn-about">About this map</button>
+    </div>
+  </header>
 
-<header>
-  <h1>Flood Risk Assessment — Greater Accra Region</h1>
-  <div style="display:flex;align-items:center;gap:12px">
-    <span class="meta">Data: SRTM DEM · CHIRPS Rainfall · ESA WorldCover · OSM | GeoBuilders Africa</span>
-    <button id="btn-about" style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;flex-shrink:0">About this map</button>
-  </div>
-</header>
+  <div id="map">
+    <div class="controls">
+      <h3>Layers</h3>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-risk" checked />
+        Flood risk score
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-boundaries" checked />
+        District boundaries
+      </label>
+      <div class="opacity-row">
+        <span>Opacity</span>
+        <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.8" />
+        <span id="opacity-val">80%</span>
+      </div>
+    </div>
 
-<div id="map">
+    <div class="legend">
+      <h3>Flood Risk Score</h3>
+      <div class="legend-bar"></div>
+      <div class="legend-labels">
+        <span>Low (0)</span>
+        <span>High (1)</span>
+      </div>
+    </div>
 
-  <div class="controls">
-    <h3>Layers</h3>
-    <label class="toggle-row">
-      <input type="checkbox" id="toggle-risk" checked />
-      Flood risk score
-    </label>
-    <label class="toggle-row">
-      <input type="checkbox" id="toggle-boundaries" checked />
-      District boundaries
-    </label>
-    <div class="opacity-row">
-      <span>Opacity</span>
-      <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.8" />
-      <span id="opacity-val">80%</span>
+    <div id="validation-badge">
+      <div class="badge-title">Qualitative Validation - May 2025</div>
+      <div class="badge-event">Greater Accra Floods - 132mm - 4 deaths - 3,000+ displaced</div>
+      <div class="badge-desc">
+        Flooded districts mean risk <strong class="text-strong">0.598</strong> vs non-flooded <strong class="text-strong">0.587</strong><br />
+        All 3 <em>chronically</em> high-risk flood zones ranked in top 4 districts.<br />
+        <span class="badge-note">
+          4 districts missed flash flooding driven by extreme rainfall -
+          a separate risk category not captured by the static model.
+          Sentinel-1 SAR validation planned for v1.1.
+        </span>
+      </div>
+      <a class="badge-link"
+         href="https://github.com/rache3/flood-risk-mapping-greater-accra"
+         target="_blank">
+        View methodology ->
+      </a>
     </div>
   </div>
 
-  <div class="legend">
-    <h3>Flood Risk Score</h3>
-    <div class="legend-bar"></div>
-    <div class="legend-labels">
-      <span>Low (0)</span>
-      <span>High (1)</span>
-    </div>
-  </div>
+  <div id="about-overlay">
+    <div id="about-panel">
+      <button id="about-close" class="about-close">X</button>
+      <div class="about-intro">
+        <div class="about-brand">FloodWatch Ghana</div>
+        <div class="about-subtitle">GeoBuilders Africa - v1.0 - Greater Accra Region</div>
+      </div>
 
-  <!-- Validation Badge -->
-  <div id="validation-badge">
-    <div class="badge-title">✓ Qualitative Validation — May 2025</div>
-    <div class="badge-event">Greater Accra Floods · 132mm · 4 deaths · 3,000+ displaced</div>
-    <div class="badge-desc">
-      Flooded districts mean risk <strong style="color:#f8fafc">0.598</strong> vs non-flooded <strong style="color:#f8fafc">0.587</strong><br/>
-      All 3 <em>chronically</em> high-risk flood zones ranked in top 4 districts.<br/>
-      <span style="font-size:10px;margin-top:4px;display:block">
-        4 districts missed flash flooding driven by extreme rainfall —
-        a separate risk category not captured by the static model.
-        Sentinel-1 SAR validation planned for v1.1.
-      </span>
-    </div>
-    <a class="badge-link"
-       href="https://github.com/rache3/flood-risk-mapping-greater-accra"
-       target="_blank">
-      View methodology →
-    </a>
-  </div>
+      <div class="about-section">
+        <h3>What is this map?</h3>
+        <p>FloodWatch Ghana is an open source flood risk intelligence system for Greater Accra. It combines five satellite datasets into a single risk score (0-1) for each of the region's 29 districts, updated monthly. A higher score means a district is more structurally vulnerable to flooding.</p>
+      </div>
 
-</div>
-
-<script>
-const TITILER_URL = "https://titiler-z2qegb4nha-uc.a.run.app";
-const R2_PUBLIC   = "https://storage.googleapis.com/accra-flood-risk";
-const COG_URL     = `${R2_PUBLIC}/rasters/flood_risk_map.cog.tif?v=4`;
-const GEOJSON_URL = `${R2_PUBLIC}/vectors/gadm41_GHA_accra.json`;
-
-const TILE_URL = `${TITILER_URL}/cog/tiles/{z}/{x}/{y}` +
-  `?url=${encodeURIComponent(COG_URL)}` +
-  `&colormap_name=plasma` +
-  `&rescale=0,1`;
-
-const map = new maplibregl.Map({
-  container: "map",
-  style: {
-    version: 8,
-    sources: {
-      "osm": {
-        type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256,
-        attribution: "© OpenStreetMap contributors",
-      }
-    },
-    layers: [{ id: "osm", type: "raster", source: "osm", paint: { "raster-opacity": 0.35 } }],
-  },
-  center: [0.10, 5.78],
-  zoom: 8,
-  maxZoom: 14,
-});
-
-map.addControl(new maplibregl.NavigationControl(), "top-right");
-map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
-
-map.on("load", () => {
-
-  // -- Flood risk raster -----------------------------------------------------
-  map.addSource("flood-risk", {
-    type: "raster",
-    tiles: [TILE_URL],
-    tileSize: 256,
-  });
-
-  map.addLayer({
-    id: "flood-risk-layer",
-    type: "raster",
-    source: "flood-risk",
-    paint: { "raster-opacity": 0.8 },
-  });
-
-  // -- District boundaries ---------------------------------------------------
-  map.addSource("boundaries", {
-    type: "geojson",
-    data: GEOJSON_URL,
-  });
-
-  // Mask: fill everything outside Greater Accra with background colour
-  map.addLayer({
-    id: "flood-risk-mask",
-    type: "fill",
-    source: "boundaries",
-    paint: { "fill-color": "#1a1d26", "fill-opacity": 1 },
-    filter: ["!=", ["get", "NAME_1"], "GreaterAccra"],
-  });
-
-  map.addLayer({
-    id: "boundaries-line",
-    type: "line",
-    source: "boundaries",
-    paint: {
-      "line-color": "#ffffff",
-      "line-width": 1.5,
-      "line-opacity": 0.9,
-    },
-  });
-
-  map.addLayer({
-    id: "boundaries-fill",
-    type: "fill",
-    source: "boundaries",
-    paint: { "fill-color": "transparent" },
-  });
-
-  map.addLayer({
-    id: "boundaries-labels",
-    type: "symbol",
-    source: "boundaries",
-    minzoom: 8,
-    layout: {
-      "text-field": ["get", "NAME_2"],
-      "text-size": 11,
-      "text-anchor": "center",
-      "text-max-width": 8,
-    },
-    paint: {
-      "text-color": "#ffffff",
-      "text-halo-color": "#000000",
-      "text-halo-width": 1.5,
-    },
-  });
-
-  // -- Click popup with per-district statistics ------------------------------
-  map.on("click", "boundaries-fill", async (e) => {
-    const props = e.features[0].properties;
-    const name  = props.NAME_2 || props.NAME_1 || "Unknown";
-
-    const popup = new maplibregl.Popup({ offset: 8, maxWidth: "280px" })
-      .setLngLat(e.lngLat)
-      .setHTML(`
-        <strong>${name}</strong><br/>
-        <span style="color:#7a7870;font-size:11px">Loading statistics...</span>
-      `)
-      .addTo(map);
-
-    try {
-      const bbox = e.features[0].bbox || turf.bbox(e.features[0]);
-      const res  = await fetch(
-        `${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}` +
-        `&bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}`
-      );
-      const data = await res.json();
-      const s    = data.b1;
-
-      const riskLevel = s.mean > 0.7 ? "High" : s.mean > 0.4 ? "Moderate" : "Low";
-      const riskColor = s.mean > 0.7 ? "#fca5a5" : s.mean > 0.4 ? "#fcd34d" : "#86efac";
-      const riskBg    = s.mean > 0.7 ? "#7c1d1d" : s.mean > 0.4 ? "#78350f" : "#14532d";
-
-      popup.setHTML(`
-        <div style="font-family:sans-serif;min-width:220px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:6px">${name}</div>
-          <div style="margin-bottom:8px">
-            <span style="background:${riskBg};color:${riskColor};padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">
-              ${riskLevel} Risk
-            </span>
-          </div>
-          <table style="width:100%;font-size:12px;border-collapse:collapse">
-            <tr><td style="color:#7a7870;padding:2px 0">Mean risk score</td>
-                <td style="text-align:right;font-weight:600">${s.mean.toFixed(3)}</td></tr>
-            <tr><td style="color:#7a7870;padding:2px 0">Max risk score</td>
-                <td style="text-align:right">${s.max.toFixed(3)}</td></tr>
-            <tr><td style="color:#7a7870;padding:2px 0">Median</td>
-                <td style="text-align:right">${s.median.toFixed(3)}</td></tr>
-            <tr><td style="color:#7a7870;padding:2px 0">Std deviation</td>
-                <td style="text-align:right">${s.std.toFixed(3)}</td></tr>
-            <tr><td style="color:#7a7870;padding:2px 0">Valid pixels</td>
-                <td style="text-align:right">${s.valid_percent.toFixed(1)}%</td></tr>
-          </table>
-          <div style="margin-top:8px">
-            <div style="font-size:11px;color:#7a7870;margin-bottom:3px">Risk distribution</div>
-            <div style="display:flex;align-items:flex-end;gap:1px;height:30px">
-              ${s.histogram[0].map((count, i) => {
-                const maxCount = Math.max(...s.histogram[0]);
-                const h = Math.round((count / maxCount) * 30);
-                const hue = Math.round(270 - (i / (s.histogram[0].length - 1)) * 210);
-                const color = `hsl(${hue}, 100%, 50%)`;
-                return `<div style="flex:1;height:${h}px;background:${color};border-radius:1px 1px 0 0"></div>`;
-              }).join('')}
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:#7a7870;margin-top:2px">
-              <span>Low</span><span>High</span>
-            </div>
-          </div>
+      <div class="about-section">
+        <h3>What does the risk score mean?</h3>
+        <div class="score-grid">
+          <div class="score-card low"><span class="sval">0.0 - 0.33</span><span class="slbl">Low Risk</span></div>
+          <div class="score-card mod"><span class="sval">0.33 - 0.67</span><span class="slbl">Moderate Risk</span></div>
+          <div class="score-card high"><span class="sval">0.67 - 1.0</span><span class="slbl">High Risk</span></div>
         </div>
-      `);
-    } catch (err) {
-      popup.setHTML(`
-        <strong>${name}</strong><br/>
-        <span style="color:#7a7870;font-size:11px">Statistics temporarily unavailable. Click district again to retry.</span>
-      `);
-    }
-  });
-
-  map.on("mouseenter", "boundaries-fill", () => {
-    map.getCanvas().style.cursor = "pointer";
-  });
-  map.on("mouseleave", "boundaries-fill", () => {
-    map.getCanvas().style.cursor = "";
-  });
-});
-
-// -- Controls -----------------------------------------------------------------
-document.getElementById("toggle-risk").addEventListener("change", (e) => {
-  map.setLayoutProperty("flood-risk-layer", "visibility", e.target.checked ? "visible" : "none");
-});
-
-document.getElementById("toggle-boundaries").addEventListener("change", (e) => {
-  const v = e.target.checked ? "visible" : "none";
-  map.setLayoutProperty("boundaries-line",   "visibility", v);
-  map.setLayoutProperty("boundaries-fill",   "visibility", v);
-  map.setLayoutProperty("boundaries-labels", "visibility", v);
-});
-
-document.getElementById("opacity").addEventListener("input", (e) => {
-  const val = parseFloat(e.target.value);
-  map.setPaintProperty("flood-risk-layer", "raster-opacity", val);
-  document.getElementById("opacity-val").textContent = Math.round(val * 100) + "%";
-});
-</script>
-
-<!-- About panel overlay -->
-<div id="about-overlay" onclick="if(event.target===this)this.classList.remove('open')">
-  <div id="about-panel">
-    <button class="about-close" onclick="document.getElementById('about-overlay').classList.remove('open')">✕</button>
-    <div style="margin-bottom:20px">
-      <div style="font-size:17px;font-weight:600;margin-bottom:4px">FloodWatch Ghana</div>
-      <div style="font-size:12px;color:#7a7870">GeoBuilders Africa · v1.0 · Greater Accra Region</div>
-    </div>
-
-    <div class="about-section">
-      <h3>What is this map?</h3>
-      <p>FloodWatch Ghana is an open source flood risk intelligence system for Greater Accra. It combines five satellite datasets into a single risk score (0–1) for each of the region's 29 districts, updated monthly. A higher score means a district is more structurally vulnerable to flooding.</p>
-    </div>
-
-    <div class="about-section">
-      <h3>What does the risk score mean?</h3>
-      <div class="score-grid">
-        <div class="score-card low"><span class="sval">0.0 – 0.33</span><span class="slbl">Low Risk</span></div>
-        <div class="score-card mod"><span class="sval">0.33 – 0.67</span><span class="slbl">Moderate Risk</span></div>
-        <div class="score-card high"><span class="sval">0.67 – 1.0</span><span class="slbl">High Risk</span></div>
+        <p class="risk-explainer">The score reflects <strong class="about-text-strong">chronic structural vulnerability</strong> - areas that are low-lying, poorly drained, near water bodies, and covered by impervious surfaces. It does not predict individual rainfall events.</p>
       </div>
-      <p style="margin-top:10px">The score reflects <strong style="color:#e8e6de">chronic structural vulnerability</strong> — areas that are low-lying, poorly drained, near water bodies, and covered by impervious surfaces. It does not predict individual rainfall events.</p>
-    </div>
 
-    <div class="about-section">
-      <h3>How is the score calculated?</h3>
-      <table class="layer-tbl">
-        <tr><th>Data layer</th><th>Source</th><th>Weight</th></tr>
-        <tr><td>Elevation (DEM)</td><td>NASA SRTM</td><td>30%</td></tr>
-        <tr><td>Precipitation</td><td>CHIRPS / GPM IMERG</td><td>25%</td></tr>
-        <tr><td>Terrain slope</td><td>Derived from SRTM</td><td>20%</td></tr>
-        <tr><td>Land cover</td><td>ESA WorldCover 2021</td><td>15%</td></tr>
-        <tr><td>Water proximity</td><td>OpenStreetMap</td><td>10%</td></tr>
-      </table>
-    </div>
+      <div class="about-section">
+        <h3>How is the score calculated?</h3>
+        <table class="layer-tbl">
+          <tr><th>Data layer</th><th>Source</th><th>Weight</th></tr>
+          <tr><td>Elevation (DEM)</td><td>NASA SRTM</td><td>30%</td></tr>
+          <tr><td>Precipitation</td><td>CHIRPS / GPM IMERG</td><td>25%</td></tr>
+          <tr><td>Terrain slope</td><td>Derived from SRTM</td><td>20%</td></tr>
+          <tr><td>Land cover</td><td>ESA WorldCover 2021</td><td>15%</td></tr>
+          <tr><td>Water proximity</td><td>OpenStreetMap</td><td>10%</td></tr>
+        </table>
+      </div>
 
-    <div class="about-section">
-      <h3>Validation — May 2025</h3>
-      <p>FloodWatch v1.0 underwent qualitative validation against the May 18, 2025 Greater Accra flood event (132mm rainfall, 4 deaths, 3,000+ displaced). Flooded districts averaged a mean risk of 0.598 vs 0.587 for non-flooded districts. All 3 chronically high-risk flood zones were correctly ranked in the top 4 districts. Quantitative Sentinel-1 SAR validation is planned for v1.1.</p>
-    </div>
+      <div class="about-section">
+        <h3>Validation - May 2025</h3>
+        <p>FloodWatch v1.0 underwent qualitative validation against the May 18, 2025 Greater Accra flood event (132mm rainfall, 4 deaths, 3,000+ displaced). Flooded districts averaged a mean risk of 0.598 vs 0.587 for non-flooded districts. All 3 chronically high-risk flood zones were correctly ranked in the top 4 districts. Quantitative Sentinel-1 SAR validation is planned for v1.1.</p>
+      </div>
 
-    <div class="about-section">
-      <h3>How to use</h3>
-      <p>Click any district to see detailed risk statistics. Use the layer controls (top left) to toggle layers and adjust opacity. The map updates monthly as new rainfall data becomes available.</p>
-    </div>
+      <div class="about-section">
+        <h3>How to use</h3>
+        <p>Click any district to see detailed risk statistics. Use the layer controls (top left) to toggle layers and adjust opacity. The map updates monthly as new rainfall data becomes available.</p>
+      </div>
 
-    <div class="about-section">
-      <h3>Built by</h3>
-      <p>FloodWatch Ghana is an open source initiative by <strong style="color:#e8e6de">GeoBuilders Africa</strong>, founded by Rachel Atia, a Geospatial Data Engineer based in Accra, Ghana.</p>
-      <div class="about-links">
-        <a class="about-link" href="https://geobuildersafrica.com" target="_blank">🌍 GeoBuilders Africa</a>
-        <a class="about-link" href="https://github.com/rache3/flood-risk-mapping-greater-accra" target="_blank">⭐ GitHub</a>
-        <a class="about-link" href="mailto:floodwatch@geobuildersafrica.com">✉ Contact</a>
+      <div class="about-section">
+        <h3>Built by</h3>
+        <p>FloodWatch Ghana is an open source initiative by <strong class="about-text-strong">GeoBuilders Africa</strong>, founded by Rachel Atia, a Geospatial Data Engineer based in Accra, Ghana.</p>
+        <div class="about-links">
+          <a class="about-link" href="https://geobuildersafrica.com" target="_blank">GeoBuilders Africa</a>
+          <a class="about-link" href="https://github.com/rache3/flood-risk-mapping-greater-accra" target="_blank">GitHub</a>
+          <a class="about-link" href="mailto:floodwatch@geobuildersafrica.com">Contact</a>
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-<script>
-// About button
-document.getElementById('btn-about').addEventListener('click', () => {
-  document.getElementById('about-overlay').classList.add('open');
-});
-
-// TiTiler warmup — fires silent request to reduce cold start latency
-const _TITILER = "https://titiler-z2qegb4nha-uc.a.run.app";
-const _COG = "https://storage.googleapis.com/accra-flood-risk/rasters/flood_risk_map.cog.tif?v=4";
-setTimeout(() => {
-  fetch(`${_TITILER}/cog/info?url=${encodeURIComponent(_COG)}`).catch(() => {});
-}, 1500);
-</script>
-
+  <script src="./script.js"></script>
 </body>
 </html>
