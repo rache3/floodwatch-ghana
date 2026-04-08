@@ -224,13 +224,13 @@ header .meta { font-size: 12px; color: #7a7870; }
 .about-section p { font-size: 13px; line-height: 1.65; color: #b8b6ae; }
 .score-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 10px; }
 .score-card { border-radius: 7px; padding: 10px; text-align: center; }
-.score-card.low  { background: rgba(74,222,128,0.08); border: 1px solid rgba(74,222,128,0.2); }
-.score-card.mod  { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.2); }
-.score-card.high { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.2); }
+.score-card.low  { background: rgba(13,8,135,0.2); border: 1px solid rgba(13,8,135,0.5); }
+.score-card.mod  { background: rgba(177,42,144,0.2); border: 1px solid rgba(177,42,144,0.5); }
+.score-card.high { background: rgba(252,166,54,0.2); border: 1px solid rgba(252,166,54,0.5); }
 .score-card .sval { display:block; font-size:13px; font-weight:600; margin-bottom:3px; }
-.score-card.low  .sval { color: #4ade80; }
-.score-card.mod  .sval { color: #fbbf24; }
-.score-card.high .sval { color: #f87171; }
+.score-card.low  .sval { color: #7b6cf6; }
+.score-card.mod  .sval { color: #e16cce; }
+.score-card.high .sval { color: #fca636; }
 .score-card .slbl { font-size: 11px; color: #7a7870; }
 .layer-tbl { width:100%; border-collapse:collapse; margin-top:10px; font-size:12px; }
 .layer-tbl th { text-align:left; color:#7a7870; font-weight:500; padding:4px 0; border-bottom:1px solid #2a2d3a; }
