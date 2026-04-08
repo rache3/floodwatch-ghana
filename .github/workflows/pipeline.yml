@@ -8,12 +8,12 @@
 #   3. Upload outputs (COG rasters + GeoJSON) to Google Cloud Storage (GCS)
 #
 # Required GitHub Repository Variables (Settings → Secrets and variables → Actions → Variables):
-#   GCP_PROJECT_ID              — your GCP project ID
-#   GCP_PROJECT_NUMBER          — your GCP project number
-#   GCP_REGION                  — GCP region (e.g. us-central1)
-#   GCS_BUCKET                  — your GCS bucket name
-#   WORKLOAD_IDENTITY_PROVIDER  — full path to your WIF provider
-#   SERVICE_ACCOUNT             — github-pipeline service account email
+#   GCP_PROJECT_ID              – your GCP project ID
+#   GCP_PROJECT_NUMBER          – your GCP project number
+#   GCP_REGION                  – GCP region (e.g. us-central1)
+#   GCS_BUCKET                  – your GCS bucket name
+#   WORKLOAD_IDENTITY_PROVIDER  – full path to your WIF provider
+#   SERVICE_ACCOUNT             – github-pipeline service account email
 #
 # No secrets needed — authentication uses Workload Identity Federation.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -135,35 +135,42 @@ jobs:
           gcloud run jobs create $JOB_NAME \
             --image=$IMAGE:latest \
             --region=$REGION \
-            --memory=2Gi \
+            --memory=4Gi \
             --cpu=2 \
             --max-retries=1 \
-            --task-timeout=30m \
+            --task-timeout=60m \
             --set-env-vars="\
               DATA_DIR=/app/data,\
               OUTPUT_DIR=/app/output,\
               GCS_BUCKET=$GCS_BUCKET,\
               RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
               RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
-              WEIGHT_DEM=0.40,\
-              WEIGHT_RAINFALL=0.35,\
-              WEIGHT_SLOPE=0.25" \
+              WEIGHT_DEM=0.30,\
+              WEIGHT_RAINFALL=0.25,\
+              WEIGHT_SLOPE=0.20,\
+              WEIGHT_LANDCOVER=0.15,\
+              WEIGHT_WATERBODIES=0.10" \
             --project=$PROJECT_ID \
           || gcloud run jobs update $JOB_NAME \
             --image=$IMAGE:latest \
             --region=$REGION \
+            --memory=4Gi \
+            --cpu=2 \
+            --task-timeout=60m \
             --set-env-vars="\
               DATA_DIR=/app/data,\
               OUTPUT_DIR=/app/output,\
               GCS_BUCKET=$GCS_BUCKET,\
               RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
               RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
-              WEIGHT_DEM=0.40,\
-              WEIGHT_RAINFALL=0.35,\
-              WEIGHT_SLOPE=0.25" \
+              WEIGHT_DEM=0.30,\
+              WEIGHT_RAINFALL=0.25,\
+              WEIGHT_SLOPE=0.20,\
+              WEIGHT_LANDCOVER=0.15,\
+              WEIGHT_WATERBODIES=0.10" \
             --project=$PROJECT_ID
 
-      - name: Execute Cloud Run job
+      - name: Execute Cloud Run job and wait
         run: |
           gcloud run jobs execute $JOB_NAME \
             --region=$REGION \
@@ -178,7 +185,7 @@ jobs:
           echo "- **Rainfall year:** ${{ github.event.inputs.year || '2024' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Rainfall month:** ${{ github.event.inputs.month || '6' }}" >> $GITHUB_STEP_SUMMARY
           echo "- **GCS bucket:** gs://$GCS_BUCKET" >> $GITHUB_STEP_SUMMARY
-          echo "- **Live map:** https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Live map:** https://floodwatch.geobuildersafrica.com" >> $GITHUB_STEP_SUMMARY
 
       - name: Log failure summary
         if: failure()
