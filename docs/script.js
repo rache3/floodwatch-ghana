@@ -113,43 +113,15 @@ map.on("load", () => {
       `)
       .addTo(map);
 
-    const bbox = e.features[0].bbox || turf.bbox(e.features[0]);
-    const statsUrl =
-      `${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}` +
-      `&bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}`;
-
-    // Retry up to 3 times — handles TiTiler cold start latency
-    let s = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        popup.setHTML(`
-          <strong>${name}</strong><br/>
-          <span style="color:#7a7870;font-size:11px">Retrying... (${attempt}/2)</span>
-        `);
-        await new Promise(r => setTimeout(r, attempt * 3000));
-      }
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 12000);
-        const res = await fetch(statsUrl, { signal: ctrl.signal });
-        clearTimeout(timer);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        s = (await res.json()).b1;
-        break;
-      } catch (retryErr) {
-        if (attempt === 2) {
-          popup.setHTML(`
-            <strong>${name}</strong><br/>
-            <span style="color:#7a7870;font-size:11px">
-              Statistics temporarily unavailable.<br/>Click the district again to retry.
-            </span>
-          `);
-          return;
-        }
-      }
-    }
-
     try {
+      const bbox = e.features[0].bbox || turf.bbox(e.features[0]);
+      const res = await fetch(
+        `${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}` +
+        `&bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}`
+      );
+      const data = await res.json();
+      const s = data.b1;
+
       const riskLevel = s.mean > 0.7 ? "High" : s.mean > 0.4 ? "Moderate" : "Low";
       const riskColor = s.mean > 0.7 ? "#fca5a5" : s.mean > 0.4 ? "#fcd34d" : "#86efac";
       const riskBg = s.mean > 0.7 ? "#7c1d1d" : s.mean > 0.4 ? "#78350f" : "#14532d";
@@ -180,8 +152,9 @@ map.on("load", () => {
               ${s.histogram[0].map((count, i) => {
                 const maxCount = Math.max(...s.histogram[0]);
                 const height = Math.round((count / maxCount) * 30);
-                const hue = Math.round(270 - (i / (s.histogram[0].length - 1)) * 210);
-                const color = `hsl(${hue}, 100%, 50%)`;
+                const plasmaColors = ['#0d0887','#4b03a1','#7d03a8','#a82296','#cb4679','#e56b5d','#f89441','#fdc328','#f0f921'];
+                const colorIdx = Math.round((i / (s.histogram[0].length - 1)) * (plasmaColors.length - 1));
+                const color = plasmaColors[colorIdx];
                 return `<div style="flex:1;height:${height}px;background:${color};border-radius:1px 1px 0 0"></div>`;
               }).join("")}
             </div>
@@ -194,9 +167,7 @@ map.on("load", () => {
     } catch (err) {
       popup.setHTML(`
         <strong>${name}</strong><br/>
-        <span style="color:#7a7870;font-size:11px">
-          Statistics temporarily unavailable.<br/>Click the district again to retry.
-        </span>
+        <span style="color:#7a7870;font-size:11px">Statistics temporarily unavailable. Click district again to retry.</span>
       `);
     }
   });
