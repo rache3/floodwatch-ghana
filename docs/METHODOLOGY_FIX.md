@@ -39,3 +39,18 @@ We implemented a Python-based pre-processing pipeline:
 
 ## 3. Future Outlook (v1.1)
 While the static approach is superior for the current fixed-raster model, we plan to re-evaluate the dynamic approach in v1.1 when we introduce multi-temporal data (comparing risk across different years/months), which may require a more robust backend infrastructure.
+
+---
+
+## 4. Validation Mapping & Model Sensitivity
+
+### The Challenge
+During the final validation of v0.1, we identified a "statistical gap" where the model's Mean Risk Score for flooded districts (0.574) appeared lower than for non-flooded districts (0.595). This contradicted the qualitative evidence that the model was correctly identifying high-risk zones.
+
+### Findings
+*   **Neighborhood vs. District Scale**: Documented flood events often list neighborhoods (e.g., Kaneshie, Abokobi), which must be mapped to larger GADM districts (Accra Metropolis, Ga East). 
+*   **Missing Mapping**: The initial validation script failed to recognize the `Accra` district as flooded because it was looking for the string "Kaneshie." By missing the city's most flooded metropolitan area, the "Flooded Mean" was artificially lowered.
+*   **Specific Event Dynamics**: The May 2025 event was driven by intense 132mm rainfall in a short window. While the model correctly ranks "chronically high-risk" districts (like Weija and Accra) at the top, some districts with high theoretical risk (like Ablekuma West) were not documented as flooded in this specific event, while some lower-risk districts (like Adenta) were.
+
+### Transparency Action
+We have updated the `validate_flood_risk.py` script to use a more accurate neighborhood-to-parent-district mapping. We acknowledge that while the model is **qualitatively strong** (placing the most famous flood zones in the Top 4), the **quantitative correlation** is sensitive to how historical events are documented and mapped. This remains a primary area for refinement in v1.1.

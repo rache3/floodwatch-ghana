@@ -64,15 +64,14 @@ OUTPUT_DIR    = os.getenv("OUTPUT_DIR",    "output")
 # Districts/areas documented as flooded during May 18 2025 event
 # Source: The Watchers, GDACS, local media reports
 FLOODED_AREAS = [
-    "weija",
-    "kaneshie",
-    "adabraka",
-    "adentan",
-    "adenta",
-    "oyarifa",
-    "tema",
-    "abokobi",
-    "dodowa",
+    "weija",                 # Matches WeijaGbawe
+    "accra",                 # Matches Accra Metropolis (Kaneshie, Adabraka)
+    "gaeast",                # Matches Ga East (Abokobi)
+    "la-nkwantanang-madina", # Matches La-Nkwantanang-Madina (Oyarifa)
+    "adenta",                # Matches Adenta
+    "tema",                  # Matches Tema and TemaWest
+    "kaneshie",              # Substring backup
+    "adabraka",              # Substring backup
 ]
 
 # ── Zonal Statistics ──────────────────────────────────────────────────────────
