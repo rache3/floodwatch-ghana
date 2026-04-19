@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 app = FastAPI(
     title="Accra Flood Risk Tile Server",
     description="COG tile server for the Greater Accra flood risk map",
-    version="1.0.0",
+    version="0.1.0",
 )
 
 # Allow the frontend (GitHub Pages) to call this API
