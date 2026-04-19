@@ -5,7 +5,7 @@
 **Version:** v0.1 (Baseline Risk)
 **Live map:** https://floodwatch.geobuildersafrica.com  
 **Company:** https://geobuildersafrica.com  
-**GitHub:** https://github.com/rache3/flood-risk-mapping-greater-accra
+**GitHub:** https://github.com/rache3/floodwatch-ghana
 
 ---
 
@@ -41,7 +41,7 @@ Qualitative validation compares the model's district-level risk rankings against
 
 Flooded districts mean risk score: **0.5983** vs non-flooded: **0.5874** (+0.0109)
 
-All 3 chronically high-risk flood zones correctly ranked in the top 4 districts. The 4 districts that were missed (Adenta, La-Nkwantanang-Madina, Tema, TemaWest) experienced flash flooding driven by extreme rainfall (132mm) — a separate risk category not captured by the static structural model. This is an expected limitation of v1.0 and informs the roadmap for v1.1.
+All 3 chronically high-risk flood zones correctly ranked in the top 4 districts. The 4 districts that were missed (Adenta, La-Nkwantanang-Madina, Tema, TemaWest) experienced flash flooding driven by extreme rainfall (132mm) — a separate risk category not captured by the static structural model. This is an expected limitation of v0.1 and informs the roadmap for v1.1.
 
 | District | Rank | Percentile | Flooded May 2025 |
 |---|---|---|---|
@@ -128,7 +128,7 @@ Orchestrated by **GitHub Actions** on a monthly cron schedule. Authentication us
 ## Repository structure
 
 ```
-flood-risk-mapping-greater-accra/
+floodwatch-ghana/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml             # Lint, structure validation, syntax checks
@@ -164,8 +164,8 @@ flood-risk-mapping-greater-accra/
 ## Quickstart — run locally
 
 ```bash
-git clone https://github.com/rache3/flood-risk-mapping-greater-accra.git
-cd flood-risk-mapping-greater-accra
+git clone https://github.com/rache3/floodwatch-ghana.git
+cd floodwatch-ghana
 
 pip install -r requirements.txt
 

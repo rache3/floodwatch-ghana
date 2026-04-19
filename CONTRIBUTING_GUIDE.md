@@ -23,7 +23,7 @@ FloodWatch Ghana is an open source flood risk intelligence pipeline for Greater 
 ## Project structure
 
 ```
-flood-risk-mapping-greater-accra/
+floodwatch-ghana/
 ├── scripts/               # Pipeline scripts — one file per data layer
 │   ├── ingest.py          # Orchestrator — runs all ingest scripts in order
 │   ├── ingest_dem.py      # SRTM 30m elevation data
@@ -58,8 +58,8 @@ Each ingest script is independent — you can run any one of them individually w
 
 **Clone the repo:**
 ```bash
-git clone https://github.com/rache3/flood-risk-mapping-greater-accra.git
-cd flood-risk-mapping-greater-accra
+git clone https://github.com/rache3/floodwatch-ghana.git
+cd floodwatch-ghana
 ```
 
 ---

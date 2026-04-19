@@ -2,8 +2,8 @@
 
 **Project:** Cloud-Native Flood Risk Mapping Pipeline, Greater Accra Region  
 **Author:** Rachel Atia  
-**Repo:** [rache3/flood-risk-mapping-greater-accra](https://github.com/rache3/flood-risk-mapping-greater-accra)  
-**Live map:** https://rache3.github.io/flood-risk-mapping-greater-accra
+**Repo:** [rache3/floodwatch-ghana](https://github.com/rache3/floodwatch-ghana)  
+**Live map:** https://rache3.github.io/floodwatch-ghana
 
 ---
 
@@ -89,8 +89,8 @@ Output range: **0 (low risk) → 1 (high risk)**
 Open your terminal and run:
 
 ```bash
-git clone https://github.com/rache3/flood-risk-mapping-greater-accra.git
-cd flood-risk-mapping-greater-accra
+git clone https://github.com/rache3/floodwatch-ghana.git
+cd floodwatch-ghana
 ```
 
 ### Step 2 — Install Python dependencies
@@ -106,7 +106,7 @@ pip install rasterio numpy boto3 gdal
 Put these files in the root of the project folder:
 
 ```
-flood-risk-mapping-greater-accra/
+floodwatch-ghana/
 ├── accra_dem.tif          ← elevation raster (int16, EPSG:4326)
 ├── accra_rainfall.tif     ← rainfall raster (float64, EPSG:4326)
 ├── accra_slope.tif        ← slope raster (float32, EPSG:4326)
@@ -422,7 +422,7 @@ project_id      = "project-a93d8eb8-d695-49f7-857"
 project_number  = "244163528833"
 region          = "us-central1"
 github_username = "rache3"
-github_repo     = "flood-risk-mapping-greater-accra"
+github_repo     = "floodwatch-ghana"
 bucket_name     = "accra-flood-risk"
 titiler_image   = "gcr.io/project-a93d8eb8-d695-49f7-857/titiler:latest"
 ```
@@ -829,4 +829,4 @@ Increment the number each time you update the raster. Then commit and push.
 
 ---
 
-*Guide generated: March 2026 | Rachel Atia | github.com/rache3/flood-risk-mapping-greater-accra*
+*Guide generated: March 2026 | Rachel Atia | github.com/rache3/floodwatch-ghana*
