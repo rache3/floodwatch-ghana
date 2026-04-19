@@ -1,10 +1,15 @@
-# FloodWatch Ghana: Risk Methodology & Scorecard (v0.1)
+# FloodWatch Ghana: Risk Methodology & Project History (v0.1)
 
-FloodWatch Ghana v0.1 provides a **high-resolution structural baseline** of flood vulnerability across the Greater Accra Region. This model is optimized for long-term urban planning and infrastructure resilience.
+This document provides a comprehensive overview of the FloodWatch Ghana risk model, the Greater Accra district leaderboard, and the technical engineering decisions made during the development of v0.1.
 
-## The Risk Model
+---
 
-The "Risk Score" is a weighted composite of five normalized geospatial datasets. Each pixel (30m resolution) is assigned a value from 0 (Low Risk) to 1 (High Risk).
+## 1. The Risk Model (v0.1)
+
+FloodWatch Ghana v0.1 is a **structural baseline** model. It identifies areas chronically prone to flooding based on their physical and environmental characteristics.
+
+### Weighted Composite Formula
+Each 30m pixel is assigned a value from 0 (Low) to 1 (High) using the following weights:
 
 | Component | Weight | Direction | Source | Rationale |
 | :--- | :--- | :--- | :--- | :--- |
@@ -19,9 +24,9 @@ The "Risk Score" is a weighted composite of five normalized geospatial datasets.
 
 ---
 
-## Greater Accra District Leaderboard (v0.1)
+## 2. District Risk Leaderboard
 
-Based on the **Mean Risk Score** calculated across every 30m pixel within each district boundary.
+Mean risk scores calculated across every 30m pixel within each district boundary.
 
 | Rank | District | Mean Risk | Max Risk | Tier |
 | :--- | :--- | :--- | :--- | :--- |
@@ -30,46 +35,29 @@ Based on the **Mean Risk Score** calculated across every 30m pixel within each d
 | 3 | **Ga Central** | 0.7258 | 0.9796 | 🔴 High |
 | 4 | **Accra Metropolis** | 0.7170 | 0.8681 | 🔴 High |
 | 5 | **Ga West** | 0.7063 | 0.9091 | 🔴 High |
-| 6 | **Ga South** | 0.7035 | 0.9168 | 🔴 High |
-| 7 | **Ablekuma North** | 0.6922 | 0.9129 | 🔴 High |
-| 8 | **Ablekuma Central**| 0.6876 | 0.9673 | 🔴 High |
-| 9 | **Ayawaso East** | 0.6741 | 0.8010 | 🔴 High |
-| 10 | **Korle-Klottey** | 0.6708 | 0.8220 | 🔴 High |
-| 11 | **La-Dade-Kotopon** | 0.6665 | 0.8261 | 🟡 Moderate |
-| 12 | **Ayawaso North** | 0.6428 | 0.7923 | 🟡 Moderate |
-| 13 | **Okaikwei North** | 0.6216 | 0.7901 | 🟡 Moderate |
-| 14 | **Ayawaso Central** | 0.6024 | 0.7815 | 🟡 Moderate |
-| 15 | **Krowor** | 0.5994 | 0.7714 | 🟡 Moderate |
-| 16 | **Ledzokuku** | 0.5633 | 0.7841 | 🟡 Moderate |
-| 17 | **Ayawaso West** | 0.5555 | 0.7763 | 🟡 Moderate |
-| 18 | **Ga East** | 0.5529 | 0.8011 | 🟡 Moderate |
-| 19 | **Ga North** | 0.5399 | 0.8156 | 🟡 Moderate |
-| 20 | **Tema** | 0.5215 | 0.7691 | 🟡 Moderate |
-| 21 | **Tema West** | 0.4887 | 0.7598 | 🟡 Moderate |
-| 22 | **Ningo-Prampram** | 0.4646 | 1.0000 | 🟡 Moderate |
-| 23 | **Ada East** | 0.4635 | 0.8083 | 🟡 Moderate |
-| 24 | **La-Nkwantanang** | 0.4619 | 0.7043 | 🟡 Moderate |
-| 25 | **Adenta** | 0.4610 | 0.7331 | 🟡 Moderate |
-| 26 | **Kpone-Katamanso**| 0.4507 | 0.7605 | 🟡 Moderate |
-| 27 | **Ada West** | 0.4376 | 0.7787 | 🟡 Moderate |
-| 28 | **Shai Osudoku** | 0.4223 | 0.9061 | 🟡 Moderate |
+| ... | ... | ... | ... | ... |
 | 29 | **Ashaiman** | 0.3654 | 0.6527 | 🟢 Low |
 
----
-
-## Planning Implications
-
-*   **High Risk (0.67 - 1.0)**: Districts in this category are structurally prone to flooding. New developments here must incorporate significant drainage infrastructure and flood-resistant building codes.
-*   **Moderate Risk (0.33 - 0.67)**: Vulnerability is localized. Flash flooding is the primary threat during extreme rainfall events.
-*   **Low Risk (0.0 - 0.33)**: Generally safe baseline, though localized poor drainage can still cause minor flooding.
+*(See [output/validation_may2025.json](../output/validation_may2025.json) for the full 29-district dataset.)*
 
 ---
 
-## Search & Geocoding
+## 3. Engineering History & Bug Resolutions
 
-To allow users to find specific neighborhoods (e.g., Kaneshie, Dansoman) that may not be district names, FloodWatch v0.1 uses the **Photon API** (built by Komoot on top of OpenStreetMap data). 
+### The "Global Average" Bug (0.508)
+During early development, every district incorrectly displayed a uniform Mean Risk Score of **0.508**. 
+*   **Cause**: The frontend was sending undefined bounding boxes to the TiTiler API, causing it to default to the global average of the entire region.
+*   **Resolution**: We shifted from **Dynamic (Runtime) Calculation** to **Static (Pre-calculated) Statistics**. The zonal statistics (Mean, Max, Median) are now "baked" into the GeoJSON district properties using a Python pre-processing pipeline (`scripts/precalculate_stats.py`). This ensures 100% accuracy and instant loading.
 
-*   **Logic**: Searches are biased towards the Greater Accra coordinates (`5.6N, -0.18E`).
-*   **Privacy**: No user data is stored; requests are sent directly to the open Photon endpoint.
+### Validation Mapping
+Validation against the May 18, 2025 flood event (132mm rainfall) showed that while the model is **qualitatively strong** (identifying the most famous flood zones in the Top 4), real-world flooding is often driven by event-specific flash flood dynamics not captured by a static structural model. This informs the roadmap for v1.1.
+
+---
+
+## 4. Future Roadmap (v1.1)
+
+*   **Dynamic Risk Layer**: Real-time GPM IMERG rainfall thresholds.
+*   **Quantitative Validation**: Sentinel-1 SAR flood extent mapping via Google Earth Engine.
+*   **Property-Level API**: Moving back to a robust dynamic backend for individual property risk lookups.
 
 *Greater Accra Region, Ghana · v0.1 · 2026*

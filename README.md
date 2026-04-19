@@ -57,8 +57,7 @@ All 3 chronically high-risk flood zones correctly ranked in the top 4 districts.
 
 3 of 7 flooded districts ranked in the top 4 risk zones. Districts that ranked lower but flooded (Adenta, La-Nkwantanang-Madina) experienced **flash flooding** driven by extreme rainfall rather than chronic structural vulnerability — a known limitation of the current static model.
 
-Validation script: `scripts/validate_flood_risk.py`  
-Full results: `output/validation_may2025.json`
+Full Methodology & District Leaderboard: [docs/METHODOLOGY.md](./docs/METHODOLOGY.md)
 
 ---
 
@@ -149,7 +148,8 @@ floodwatch-ghana/
 │   ├── variables.tf
 │   └── outputs.tf
 ├── docs/
-│   └── index.html             # MapLibre GL JS web map
+│   ├── index.html         # MapLibre GL JS web map
+│   └── METHODOLOGY.md     # Risk model methodology & scorecard
 ├── output/
 │   └── validation_may2025.json # Validation results
 ├── data/
