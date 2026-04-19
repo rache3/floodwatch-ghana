@@ -2,6 +2,7 @@
 ### Greater Accra Region
 
 **Author:** Rachel Atia · GeoBuilders Africa  
+**Version:** v0.1 (Baseline Risk)
 **Live map:** https://floodwatch.geobuildersafrica.com  
 **Company:** https://geobuildersafrica.com  
 **GitHub:** https://github.com/rache3/flood-risk-mapping-greater-accra
@@ -30,7 +31,9 @@ Greater Accra is the pilot region. The pipeline is designed to scale across all 
 
 ## Validation
 
-FloodWatch Ghana v1.0 underwent **qualitative validation** against the **May 18, 2025 Greater Accra flood event** — 132.20mm of rainfall, 4 deaths, 3,000+ displaced (Source: The Watchers, GDACS, Copernicus EMS).
+FloodWatch Ghana v0.1 underwent **qualitative validation** against the **May 18, 2025 Greater Accra flood event** — 132.20mm of rainfall, 4 deaths, 3,000+ displaced.
+
+Full Methodology & District Leaderboard: [docs/METHODOLOGY.md](./docs/METHODOLOGY.md)
 
 Qualitative validation compares the model's district-level risk rankings against documented flood locations from news reports and official sources. It does not use satellite-derived flood extent maps — that quantitative validation is planned for v1.1 using Sentinel-1 SAR imagery via Google Earth Engine.
 
@@ -188,6 +191,7 @@ python scripts/validate_flood_risk.py
 | Slope | Derived from SRTM | 30m | — |
 | Land cover | ESA WorldCover 2021 | 10m | Free |
 | Water bodies | OpenStreetMap Overpass API | Variable | Open |
+| Geocoding | Photon (Komoot / OSM) | — | Open |
 | District boundaries | GADM v4.1 | — | Free |
 
 ---

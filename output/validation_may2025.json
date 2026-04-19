@@ -10,11 +10,11 @@
     "total_districts": 29,
     "flooded_districts": 7,
     "not_flooded_districts": 22,
-    "flooded_mean_risk": 0.5983,
-    "not_flooded_mean_risk": 0.5874,
-    "risk_difference": 0.0109,
-    "flooded_high_risk_pct": 40.9,
-    "not_flooded_high_risk_pct": 40.0
+    "flooded_mean_risk": 0.5736,
+    "not_flooded_mean_risk": 0.5953,
+    "risk_difference": -0.0216,
+    "flooded_high_risk_pct": 33.7,
+    "not_flooded_high_risk_pct": 42.3
   },
   "districts": [
     {
@@ -43,7 +43,7 @@
       "max_risk": 0.9796,
       "high_risk_pct": 74.0,
       "pixel_count": 51687,
-      "flooded_may2025": true,
+      "flooded_may2025": false,
       "rank": 3,
       "percentile": 89.7
     },
@@ -193,7 +193,7 @@
       "max_risk": 0.8011,
       "high_risk_pct": 23.6,
       "pixel_count": 88938,
-      "flooded_may2025": false,
+      "flooded_may2025": true,
       "rank": 18,
       "percentile": 37.9
     },

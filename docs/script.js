@@ -210,6 +210,78 @@ aboutOverlay.addEventListener("click", (event) => {
   }
 });
 
+// --- Search Logic ---
+let searchMarker = null;
+const searchInput = document.getElementById("search-input");
+const searchResults = document.getElementById("search-results");
+
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+const handleSearch = debounce(async (query) => {
+  if (query.length < 3) {
+    searchResults.classList.remove("active");
+    return;
+  }
+
+  try {
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&lat=5.6037&lon=-0.1870&bbox=-0.5,5.4,0.6,6.2&limit=5`);
+    const data = await res.json();
+    
+    searchResults.innerHTML = "";
+    if (data.features.length === 0) {
+      searchResults.classList.remove("active");
+      return;
+    }
+
+    data.features.forEach(f => {
+      const item = document.createElement("div");
+      item.className = "search-result-item";
+      const name = f.properties.name || f.properties.street || "Unknown location";
+      const sub = [f.properties.district, f.properties.city].filter(Boolean).join(", ") || "Ghana";
+      
+      item.innerHTML = `
+        <span class="result-name">${name}</span>
+        <span class="result-sub">${sub}</span>
+      `;
+      
+      item.onclick = () => {
+        const [lon, lat] = f.geometry.coordinates;
+        map.flyTo({ center: [lon, lat], zoom: 13, essential: true });
+        
+        if (searchMarker) searchMarker.remove();
+        searchMarker = new maplibregl.Marker({ color: "#f59e0b" })
+          .setLngLat([lon, lat])
+          .addTo(map);
+
+        searchResults.classList.remove("active");
+        searchInput.value = name;
+      };
+      searchResults.appendChild(item);
+    });
+    searchResults.classList.add("active");
+  } catch (err) {
+    console.error("Geocoding error:", err);
+  }
+}, 300);
+
+searchInput.addEventListener("input", (e) => handleSearch(e.target.value));
+
+document.addEventListener("click", (e) => {
+  if (!document.getElementById("search-container").contains(e.target)) {
+    searchResults.classList.remove("active");
+  }
+});
+
 setTimeout(() => {
   fetch(`${TITILER_URL}/cog/info?url=${encodeURIComponent(COG_URL)}`).catch(() => {});
 }, 1500);
