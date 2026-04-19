@@ -193,8 +193,8 @@ This creates `flood_risk_masked.tif` in your project folder.
 ### Step 4 — Upload to GCS
 
 ```bash
-gsutil cp flood_risk_masked.tif gs://accra-flood-risk/rasters/flood_risk_map.cog.tif
-gsutil cp gadm41_GHA_2.json gs://accra-flood-risk/vectors/gadm41_GHA_2.json
+gsutil cp flood_risk_masked.tif gs://YOUR_BUCKET_NAME/rasters/flood_risk_map.cog.tif
+gsutil cp gadm41_GHA_2.json gs://YOUR_BUCKET_NAME/vectors/gadm41_GHA_2.json
 ```
 
 ### Adjusting the risk model weights
@@ -234,14 +234,14 @@ Run these commands once in the Google Cloud SDK Shell:
 gcloud services enable run.googleapis.com containerregistry.googleapis.com secretmanager.googleapis.com storage.googleapis.com
 
 # Create GCS bucket
-gsutil mb -l us-central1 gs://accra-flood-risk
+gsutil mb -l us-central1 gs://YOUR_BUCKET_NAME
 
 # Make bucket publicly readable
-gsutil iam ch allUsers:objectViewer gs://accra-flood-risk
+gsutil iam ch allUsers:objectViewer gs://YOUR_BUCKET_NAME
 
 # Set CORS policy (allows the web map to fetch files from GCS)
 echo '[{"origin":["*"],"method":["GET"],"responseHeader":["Content-Type"],"maxAgeSeconds":3600}]' > cors.json
-gsutil cors set cors.json gs://accra-flood-risk
+gsutil cors set cors.json gs://YOUR_BUCKET_NAME
 
 # Create service account for GitHub Actions
 gcloud iam service-accounts create github-pipeline --display-name="GitHub Actions Pipeline"
@@ -317,7 +317,7 @@ Open `docs/index.html` and update these two lines with your actual URLs:
 
 ```javascript
 const TITILER_URL = "https://titiler-XXXXXXXXX-uc.a.run.app";
-const R2_PUBLIC   = "https://storage.googleapis.com/accra-flood-risk";
+const R2_PUBLIC   = "https://storage.googleapis.com/YOUR_BUCKET_NAME";
 ```
 
 ### 4.5  Enable GitHub Pages
@@ -404,7 +404,7 @@ variable "github_repo" {
 variable "bucket_name" {
   description = "Name for the GCS bucket"
   type        = string
-  default     = "accra-flood-risk"
+  default     = "YOUR_BUCKET_NAME"
 }
 
 variable "titiler_image" {
@@ -418,13 +418,13 @@ variable "titiler_image" {
 > ⚠️ Add `terraform.tfvars` to your `.gitignore` — never commit this file.
 
 ```hcl
-project_id      = "project-a93d8eb8-d695-49f7-857"
-project_number  = "244163528833"
+project_id      = "YOUR_PROJECT_ID"
+project_number  = "YOUR_PROJECT_NUMBER"
 region          = "us-central1"
 github_username = "rache3"
 github_repo     = "floodwatch-ghana"
-bucket_name     = "accra-flood-risk"
-titiler_image   = "gcr.io/project-a93d8eb8-d695-49f7-857/titiler:latest"
+bucket_name     = "YOUR_BUCKET_NAME"
+titiler_image   = "gcr.io/YOUR_PROJECT_ID/titiler:latest"
 ```
 
 ### `terraform/main.tf`
@@ -661,7 +661,7 @@ When you have new DEM, rainfall, or slope data:
    ```
 4. Upload the new masked raster to GCS:
    ```bash
-   gsutil cp flood_risk_masked.tif gs://accra-flood-risk/rasters/flood_risk_map.cog.tif
+   gsutil cp flood_risk_masked.tif gs://YOUR_BUCKET_NAME/rasters/flood_risk_map.cog.tif
    ```
 5. Hard refresh the map in your browser with `Ctrl + Shift + R`
 
@@ -670,7 +670,7 @@ When you have new DEM, rainfall, or slope data:
 If you have an updated GeoJSON:
 
 ```bash
-gsutil cp gadm41_GHA_2.json gs://accra-flood-risk/vectors/gadm41_GHA_2.json
+gsutil cp gadm41_GHA_2.json gs://YOUR_BUCKET_NAME/vectors/gadm41_GHA_2.json
 ```
 
 ### Change the map colormap
@@ -713,7 +713,7 @@ Should return `{"status":"ok"}`. If it fails, redeploy TiTiler (see section 4.3)
 
 **Check 2** — Is the COG in GCS?
 ```bash
-gsutil ls -l gs://accra-flood-risk/rasters/
+gsutil ls -l gs://YOUR_BUCKET_NAME/rasters/
 ```
 Should show `flood_risk_map.cog.tif`. If not, re-upload it.
 
@@ -727,7 +727,7 @@ This is a CORS issue. Fix it by running:
 
 ```bash
 echo '[{"origin":["*"],"method":["GET"],"responseHeader":["Content-Type"],"maxAgeSeconds":3600}]' > cors.json
-gsutil cors set cors.json gs://accra-flood-risk
+gsutil cors set cors.json gs://YOUR_BUCKET_NAME
 ```
 
 Then hard refresh the map with `Ctrl + Shift + R`.
@@ -777,7 +777,7 @@ python mask_raster.py
 
 Then upload the masked output:
 ```bash
-gsutil cp flood_risk_masked.tif gs://accra-flood-risk/rasters/flood_risk_map.cog.tif
+gsutil cp flood_risk_masked.tif gs://YOUR_BUCKET_NAME/rasters/flood_risk_map.cog.tif
 ```
 
 This creates `flood_risk_masked.tif` which removes the rectangular bounding box and prevents tile bleeding on the map.
