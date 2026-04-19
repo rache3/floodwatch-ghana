@@ -135,14 +135,15 @@ jobs:
           gcloud run jobs create $JOB_NAME \
             --image=$IMAGE:latest \
             --region=$REGION \
-            --memory=4Gi \
-            --cpu=2 \
+            --memory=8Gi \
+            --cpu=4 \
             --max-retries=1 \
-            --task-timeout=60m \
+            --task-timeout=90m \
             --set-env-vars="\
               DATA_DIR=/app/data,\
               OUTPUT_DIR=/app/output,\
               GCS_BUCKET=$GCS_BUCKET,\
+              OPENTOPO_API_KEY=${{ vars.OPENTOPO_API_KEY }},\
               RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
               RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
               WEIGHT_DEM=0.30,\
@@ -154,13 +155,14 @@ jobs:
           || gcloud run jobs update $JOB_NAME \
             --image=$IMAGE:latest \
             --region=$REGION \
-            --memory=4Gi \
-            --cpu=2 \
-            --task-timeout=60m \
+            --memory=8Gi \
+            --cpu=4 \
+            --task-timeout=90m \
             --set-env-vars="\
               DATA_DIR=/app/data,\
               OUTPUT_DIR=/app/output,\
               GCS_BUCKET=$GCS_BUCKET,\
+              OPENTOPO_API_KEY=${{ vars.OPENTOPO_API_KEY }},\
               RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
               RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
               WEIGHT_DEM=0.30,\

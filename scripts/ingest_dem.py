@@ -92,45 +92,37 @@ def download_dem(output_path: str) -> bool:
     """
     Download the SRTM 30m DEM for the configured bounding box.
 
-    Returns True on success, False on failure.
-    The downloaded file is a GeoTIFF with:
-      - CRS: EPSG:4326 (WGS84 geographic)
-      - Data type: int16
-      - NoData value: -32768
-      - Values: elevation in metres above sea level
+    Includes retries to handle flaky network connections.
     """
+    import time
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
     url = build_url(BBOX, OT_API_KEY)
     log.info("Downloading SRTM 30m DEM...")
-    log.info("Bounding box: W=%.2f E=%.2f S=%.2f N=%.2f",
-             BBOX["west"], BBOX["east"], BBOX["south"], BBOX["north"])
+    
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            urllib.request.urlretrieve(url, output_path)
+            size_mb = os.path.getsize(output_path) / 1024 / 1024
+            log.info("DEM downloaded (%.1f MB) → %s", size_mb, output_path)
 
-    try:
-        urllib.request.urlretrieve(url, output_path)
+            if size_mb < 0.1: # Catch error responses that return tiny files
+                log.warning("File is too small (%.1f MB) — likely an error message", size_mb)
+                if attempt < max_retries:
+                    time.sleep(5)
+                    continue
+                return False
 
-        size_mb = os.path.getsize(output_path) / 1024 / 1024
-        log.info("DEM downloaded (%.1f MB) → %s", size_mb, output_path)
+            return True
 
-        # Sanity check — a valid DEM for this area should be at least 1MB
-        if size_mb < 1.0:
-            log.warning("File is very small (%.1f MB) — may be an error response", size_mb)
-            return False
-
-        return True
-
-    except urllib.error.HTTPError as e:
-        log.error("HTTP error %s: %s", e.code, e.reason)
-        if e.code == 401:
-            log.error("API key rejected. Check OPENTOPO_API_KEY in .env")
-        elif e.code == 400:
-            log.error("Bad request — check bounding box coordinates")
-        return False
-
-    except urllib.error.URLError as e:
-        log.error("Network error: %s", e.reason)
-        log.error("Check your internet connection and try again")
-        return False
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            log.warning("DEM download attempt %d failed: %s", attempt, str(e))
+            if attempt < max_retries:
+                time.sleep(5)
+            else:
+                return False
+    return False
 
 
 def validate_dem(output_path: str) -> bool:

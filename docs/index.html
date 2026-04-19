@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,11 +15,12 @@
   <script src="https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 </head>
+
 <body>
   <header>
     <h1>FloodWatch Ghana</h1>
     <div class="header-actions">
-      <span class="meta">Data: SRTM DEM - CHIRPS Rainfall - ESA WorldCover - OSM - Photon Geocoding | GeoBuilders Africa</span>
+      <span class="meta">Data: SRTM DEM - CHIRPS Rainfall - ESA WorldCover - OSM | GeoBuilders Africa</span>
       <div id="search-container">
         <input type="text" id="search-input" placeholder="Search a town or city..." autocomplete="off" />
         <div id="search-results"></div>
@@ -60,13 +62,12 @@
       <div class="badge-desc">
         All 3 <em>chronically</em> high-risk flood zones correctly ranked in top 4 districts.<br />
         <span class="badge-note">
-          Optimized for <strong class="text-strong">long-term urban planning</strong> and baseline vulnerability assessment. 
+          Optimized for <strong class="text-strong">long-term urban planning</strong> and baseline vulnerability
+          assessment.
           Event-specific flash flood validation planned for v1.1.
         </span>
       </div>
-      <a class="badge-link"
-         href="https://github.com/rache3/flood-risk-mapping-greater-accra"
-         target="_blank">
+      <a class="badge-link" href="https://github.com/rache3/floodwatch-ghana" target="_blank">
         View methodology ->
       </a>
     </div>
@@ -82,7 +83,9 @@
 
       <div class="about-section">
         <h3>What is this map?</h3>
-        <p>FloodWatch Ghana is an open source flood risk intelligence system for Greater Accra. In its v0.1 "raw" state, it provides a high-resolution, static baseline of structural flood vulnerability. This methodology is optimized for **long-term urban planning**, infrastructure assessment, and city-wide resilience strategy.</p>
+        <p>FloodWatch Ghana is an open source flood risk intelligence system for Greater Accra. In its v0.1 "raw" state,
+          it provides a high-resolution, static baseline of structural flood vulnerability. This methodology is
+          optimized for **long-term urban planning**, infrastructure assessment, and city-wide resilience strategy.</p>
       </div>
 
       <div class="about-section">
@@ -92,37 +95,70 @@
           <div class="score-card mod"><span class="sval">0.33 - 0.67</span><span class="slbl">Moderate Risk</span></div>
           <div class="score-card high"><span class="sval">0.67 - 1.0</span><span class="slbl">High Risk</span></div>
         </div>
-        <p class="risk-explainer">The score reflects <strong class="about-text-strong">chronic structural vulnerability</strong> - areas that are low-lying, poorly drained, and near water bodies. This static baseline acts as a foundation for long-term planning, identifying where the city's infrastructure is most at risk regardless of individual weather events.</p>
+        <p class="risk-explainer">The score reflects <strong class="about-text-strong">chronic structural
+            vulnerability</strong> - areas that are low-lying, poorly drained, and near water bodies. This static
+          baseline acts as a foundation for long-term planning, identifying where the city's infrastructure is most at
+          risk regardless of individual weather events.</p>
       </div>
 
       <div class="about-section">
         <h3>How is the score calculated?</h3>
         <table class="layer-tbl">
-          <tr><th>Data layer</th><th>Source</th><th>Weight</th></tr>
-          <tr><td>Elevation (DEM)</td><td>NASA SRTM</td><td>30%</td></tr>
-          <tr><td>Precipitation</td><td>CHIRPS / GPM IMERG</td><td>25%</td></tr>
-          <tr><td>Terrain slope</td><td>Derived from SRTM</td><td>20%</td></tr>
-          <tr><td>Land cover</td><td>ESA WorldCover 2021</td><td>15%</td></tr>
-          <tr><td>Water proximity</td><td>OpenStreetMap</td><td>10%</td></tr>
+          <tr>
+            <th>Data layer</th>
+            <th>Source</th>
+            <th>Weight</th>
+          </tr>
+          <tr>
+            <td>Elevation (DEM)</td>
+            <td>NASA SRTM</td>
+            <td>30%</td>
+          </tr>
+          <tr>
+            <td>Precipitation</td>
+            <td>CHIRPS / GPM IMERG</td>
+            <td>25%</td>
+          </tr>
+          <tr>
+            <td>Terrain slope</td>
+            <td>Derived from SRTM</td>
+            <td>20%</td>
+          </tr>
+          <tr>
+            <td>Land cover</td>
+            <td>ESA WorldCover 2021</td>
+            <td>15%</td>
+          </tr>
+          <tr>
+            <td>Water proximity</td>
+            <td>OpenStreetMap</td>
+            <td>10%</td>
+          </tr>
         </table>
       </div>
 
       <div class="about-section">
         <h3>Validation & Planning</h3>
-        <p>FloodWatch v0.1 underwent qualitative validation against the May 18, 2025 Greater Accra flood event. The model correctly identified chronically high-risk zones, ranking the most affected areas in the top 4 of 29 districts. While individual events like flash floods are driven by extreme rainfall intensities, this model's "raw state" provides the stable baseline needed for long-term urban development and disaster mitigation planning.</p>
+        <p>FloodWatch v0.1 underwent qualitative validation against the May 18, 2025 Greater Accra flood event. The
+          model correctly identified chronically high-risk zones, ranking the most affected areas in the top 4 of 29
+          districts. While individual events like flash floods are driven by extreme rainfall intensities, this model
+          currently provides the stable baseline needed for long-term urban development, disaster mitigation planning,
+          Real Estate Development, and general awareness for residents of Greater Accra.</p>
       </div>
 
       <div class="about-section">
         <h3>How to use</h3>
-        <p>Click any district to see detailed risk statistics. Use the layer controls (top left) to toggle layers and adjust opacity. The map updates monthly as new rainfall data becomes available.</p>
+        <p>Click any district to see detailed risk statistics. Use the layer controls (top left) to toggle layers and
+          adjust opacity. The map updates monthly as new rainfall data becomes available.</p>
       </div>
 
       <div class="about-section">
         <h3>Built by</h3>
-        <p>FloodWatch Ghana is an open source initiative by <strong class="about-text-strong">GeoBuilders Africa</strong>, founded by Rachel Atia, a Geospatial Data Engineer based in Accra, Ghana.</p>
+        <p>FloodWatch Ghana is an open source initiative by <strong class="about-text-strong">GeoBuilders
+            Africa</strong>, founded by Rachel Atia, a Geospatial Data Engineer based in Accra, Ghana.</p>
         <div class="about-links">
           <a class="about-link" href="https://geobuildersafrica.com" target="_blank">GeoBuilders Africa</a>
-          <a class="about-link" href="https://github.com/rache3/flood-risk-mapping-greater-accra" target="_blank">GitHub</a>
+          <a class="about-link" href="https://github.com/rache3/floodwatch-ghana" target="_blank">GitHub</a>
           <a class="about-link" href="mailto:floodwatch@geobuildersafrica.com">Contact</a>
         </div>
       </div>
@@ -131,4 +167,5 @@
 
   <script src="./script.js"></script>
 </body>
+
 </html>
