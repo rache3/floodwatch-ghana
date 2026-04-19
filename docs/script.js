@@ -114,7 +114,7 @@ map.on("load", () => {
       .addTo(map);
 
     try {
-      const bbox = e.features[0].bbox || turf.bbox(e.features[0]);
+      const bbox = e.features[0].bbox;
       const res = await fetch(
         `${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}` +
         `&bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}`
