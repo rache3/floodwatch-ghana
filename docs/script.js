@@ -1,7 +1,7 @@
 const TITILER_URL = "https://titiler-z2qegb4nha-uc.a.run.app";
 const R2_PUBLIC = "https://storage.googleapis.com/accra-flood-risk";
 const COG_URL = `${R2_PUBLIC}/rasters/flood_risk_map.cog.tif?v=4`;
-const GEOJSON_URL = `${R2_PUBLIC}/vectors/gadm41_GHA_accra.json`;
+const GEOJSON_URL = "./gadm41_GHA_accra.json";
 
 const TILE_URL = `${TITILER_URL}/cog/tiles/{z}/{x}/{y}` +
   `?url=${encodeURIComponent(COG_URL)}` +
@@ -114,13 +114,11 @@ map.on("load", () => {
       .addTo(map);
 
     try {
-      const bbox = e.features[0].bbox;
-      const res = await fetch(
-        `${TITILER_URL}/cog/statistics?url=${encodeURIComponent(COG_URL)}` +
-        `&bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}`
-      );
-      const data = await res.json();
-      const s = data.b1;
+      const s = typeof props.stats === "string" ? JSON.parse(props.stats) : props.stats;
+
+      if (!s) {
+        throw new Error("No statistics available for this district");
+      }
 
       const riskLevel = s.mean > 0.7 ? "High" : s.mean > 0.4 ? "Moderate" : "Low";
       const riskColor = s.mean > 0.7 ? "#fca5a5" : s.mean > 0.4 ? "#fcd34d" : "#86efac";
@@ -167,7 +165,7 @@ map.on("load", () => {
     } catch (err) {
       popup.setHTML(`
         <strong>${name}</strong><br/>
-        <span style="color:#7a7870;font-size:11px">Statistics temporarily unavailable. Click district again to retry.</span>
+        <span style="color:#7a7870;font-size:11px">Statistics not found for this district.</span>
       `);
     }
   });
