@@ -116,53 +116,63 @@ def download_osm_water(output_geojson: str) -> bool:
     Rate limits apply — avoid querying too frequently.
     Public endpoint: https://overpass-api.de/api/interpreter
 
-    Returns True on success, False on failure.
+    Includes exponential backoff retries to handle flaky API responses (429/504).
     """
+    import urllib.parse
+    import time
+
     log.info("Querying OpenStreetMap Overpass API for water features...")
 
     query = build_overpass_query(BBOX)
     url = "https://overpass-api.de/api/interpreter"
+    
+    max_retries = 5
+    retry_delay = 5  # seconds
 
-    try:
-        import urllib.parse
+    for attempt in range(1, max_retries + 1):
+        try:
+            req = urllib.request.Request(
+                url,
+                data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
 
-        req = urllib.request.Request(
-            url,
-            data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
+            log.info("Attempt %d/%d: Sending Overpass query (timeout: 180s)...", attempt, max_retries)
+            with urllib.request.urlopen(req, timeout=200) as response:
+                raw = response.read().decode("utf-8")
 
-        log.info("Sending Overpass query (timeout: 60s)...")
-        with urllib.request.urlopen(req, timeout=90) as response:
-            raw = response.read().decode("utf-8")
+            data = json.loads(raw)
+            element_count = len(data.get("elements", []))
+            log.info("OSM returned %d water features", element_count)
 
-        data = json.loads(raw)
-        element_count = len(data.get("elements", []))
-        log.info("OSM returned %d water features", element_count)
+            if element_count == 0:
+                log.warning("No water features returned — check bounding box")
+                return False
 
-        if element_count == 0:
-            log.warning("No water features returned — check bounding box")
+            # Convert OSM JSON to GeoJSON
+            geojson = osm_to_geojson(data)
+
+            with open(output_geojson, "w") as f:
+                json.dump(geojson, f)
+
+            log.info("Water features saved → %s (%d features)",
+                     output_geojson, len(geojson["features"]))
+            return True
+
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            log.warning("Overpass API attempt %d failed: %s", attempt, str(e))
+            if attempt < max_retries:
+                sleep_time = retry_delay * (2 ** (attempt - 1))
+                log.info("Retrying in %d seconds...", sleep_time)
+                time.sleep(sleep_time)
+            else:
+                log.error("All Overpass API retries exhausted.")
+                return False
+        except Exception as e:
+            log.error("Unexpected error during OSM ingest: %s", e)
             return False
-
-        # Convert OSM JSON to GeoJSON
-        geojson = osm_to_geojson(data)
-
-        with open(output_geojson, "w") as f:
-            json.dump(geojson, f)
-
-        log.info("Water features saved → %s (%d features)",
-                 output_geojson, len(geojson["features"]))
-        return True
-
-    except urllib.error.URLError as e:
-        log.error("Overpass API request failed: %s", e.reason)
-        return False
-    except json.JSONDecodeError as e:
-        log.error("Invalid JSON response from Overpass API: %s", e)
-        return False
-    except Exception as e:
-        log.error("Unexpected error: %s", e)
-        return False
+    
+    return False
 
 
 def osm_to_geojson(osm_data: dict) -> dict:
