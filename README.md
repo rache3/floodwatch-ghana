@@ -1,4 +1,4 @@
-# FloodWatch Ghana — Flood Risk Intelligence Pipeline
+# FloodWatch Ghana — Flood Risk Intelligence Application
 ### Greater Accra Region
 
 **Author:** Rachel Atia · GeoBuilders Africa  
