@@ -1,231 +1,268 @@
 """
-Data Ingestion Script — Greater Accra Region
-Downloads fresh DEM, rainfall, and slope data from free public sources.
+ingest.py — Pipeline Orchestrator
+===================================
+Runs all data ingest scripts in the correct order.
+Each script can also be run independently for testing or debugging.
 
-Sources
--------
-- DEM    : Copernicus DEM (GLO-30) via OpenTopography API (free, no key needed)
-           Fallback: SRTM 30m via Earthdata
-- Rainfall: ERA5-Land monthly via the CDS API (free ECMWF account required)
-            Fallback: uses bundled accra_rainfall.tif from the repo
-- Slope  : Derived from DEM locally using GDAL — no external source needed
+Execution order:
+1. ingest_dem.py        — SRTM 30m elevation (must run first)
+2. ingest_slope.py      — derived from DEM (requires DEM)
+3. ingest_rainfall.py   — ERA5 or GPM monthly precipitation
+4. ingest_landcover.py  — ESA WorldCover (requires DEM for resampling)
+5. ingest_waterbodies.py — OSM water features (requires DEM for grid)
 
-Usage
------
-    python ingest.py [--year YYYY] [--month MM]
+After all scripts complete, the data/ folder will contain:
+- accra_dem.tif           ← elevation
+- accra_slope.tif         ← terrain slope in degrees
+- accra_rainfall.tif      ← monthly precipitation in mm
+- accra_landcover.tif     ← imperviousness fraction (0-1)
+- accra_waterbodies.tif   ← distance to nearest water body in metres
 
-The script writes to the DATA_DIR directory (default: data/).
+Usage:
+    # Run full ingest:
+    python scripts/ingest.py
+
+    # Run with custom year/month for rainfall:
+    RAINFALL_YEAR=2024 RAINFALL_MONTH=9 python scripts/ingest.py
+
+    # Force re-download of everything (delete existing files first):
+    python scripts/ingest.py --force
+
+    # Run only specific scripts:
+    python scripts/ingest_dem.py
+    python scripts/ingest_slope.py
 """
 
 import os
 import sys
 import logging
 import argparse
-import urllib.request
-import subprocess
-import numpy as np
-import rasterio
-from rasterio.transform import from_bounds
-from rasterio.crs import CRS
+import importlib
+import time
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# Bounding box for Greater Accra (from the uploaded tif files)
-BBOX = {
-    "west":  -0.5212,
-    "south":  5.4682,
-    "east":   0.6873,
-    "north":  6.1085,
-}
+# ── Script definitions ────────────────────────────────────────────────────────
+# Order matters — DEM must come before slope, landcover, and waterbodies
+SCRIPTS = [
+    {
+        "name":        "ingest_dem",
+        "description": "SRTM 30m Digital Elevation Model",
+        "output":      "accra_dem.tif",
+        "required":    True,   # Pipeline cannot continue without this
+    },
+    {
+        "name":        "ingest_slope",
+        "description": "Terrain slope (derived from DEM)",
+        "output":      "accra_slope.tif",
+        "required":    True,
+    },
+    {
+        "name":        "ingest_rainfall",
+        "description": "Monthly precipitation (ERA5 / GPM)",
+        "output":      "accra_rainfall.tif",
+        "required":    True,
+    },
+    {
+        "name":        "ingest_landcover",
+        "description": "ESA WorldCover land cover",
+        "output":      "accra_landcover.tif",
+        "required":    True,  # Now required for enhanced flood risk model
+    },
+    {
+        "name":        "ingest_waterbodies",
+        "description": "OpenStreetMap water bodies",
+        "output":      "accra_waterbodies.tif",
+        "required":    True,  # Now required for enhanced flood risk model
+    },
+    {
+        "name":        "ingest_aod",
+        "description": "MODIS / MERRA-2 Aerosol Optical Depth — quality flagging",
+        "output":      "accra_aod_meta.json",
+        "required":    False,
+    }
+]
 
 DATA_DIR = os.getenv("DATA_DIR", "data")
 
 
-# ---------------------------------------------------------------------------
-# DEM download — Copernicus GLO-30 via OpenTopography
-# ---------------------------------------------------------------------------
+def run_script(script_name: str) -> bool:
+    """
+    Dynamically import and run a script's main() function.
+    Returns True on success, False on failure.
+    """
+    # Add scripts directory to path
+    scripts_dir = os.path.dirname(os.path.abspath(__file__))
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
 
-def download_dem(out_path):
-    """Download SRTM 30m DEM via OpenTopography free REST API."""
-    url = (
-        "https://portal.opentopography.org/API/globaldem"
-        "?demtype=SRTMGL1"
-        f"&south={BBOX['south']}&north={BBOX['north']}"
-        f"&west={BBOX['west']}&east={BBOX['east']}"
-        "&outputFormat=GTiff"
-        "&API_Key=demoapikeyot2022"
-    )
-    log.info("Downloading SRTM 30m DEM...")
     try:
-        urllib.request.urlretrieve(url, out_path)
-        log.info("DEM downloaded (%.1f MB) → %s",
-                 os.path.getsize(out_path)/1024/1024, out_path)
+        module = importlib.import_module(script_name)
+        # Reload in case it was already imported (useful during testing)
+        importlib.reload(module)
+        module.main()
         return True
-    except urllib.error.URLError as e:
-        log.warning("DEM download failed: %s", e)
-        return False
-
-
-# ---------------------------------------------------------------------------
-# Slope derivation — from DEM using GDAL (no network needed)
-# ---------------------------------------------------------------------------
-
-def derive_slope(dem_path, slope_path):
-    """Derive slope in degrees from DEM using numpy. No GDAL command line needed."""
-    import numpy as np
-    log.info("Deriving slope from DEM using numpy...")
-    
-    with rasterio.open(dem_path) as src:
-        dem = src.read(1).astype(np.float32)
-        transform = src.transform
-        profile = src.profile.copy()
-        # Get pixel size in degrees
-        pixel_size_x = abs(transform.a)
-        pixel_size_y = abs(transform.e)
-
-    # Convert pixel size to approximate meters (at ~6 degrees latitude)
-    meters_per_degree = 111320
-    cell_x = pixel_size_x * meters_per_degree
-    cell_y = pixel_size_y * meters_per_degree
-
-    # Compute gradients using numpy
-    dy, dx = np.gradient(dem, cell_y, cell_x)
-
-    # Compute slope in degrees
-    slope = np.degrees(np.arctan(np.sqrt(dx**2 + dy**2)))
-    slope = slope.astype(np.float32)
-
-    # Write slope raster
-    profile.update(dtype="float32", count=1, compress="deflate")
-    with rasterio.open(slope_path, "w", **profile) as dst:
-        dst.write(slope, 1)
-
-    log.info("Slope derived → %s", slope_path)
-
-
-# ---------------------------------------------------------------------------
-# Rainfall download — ERA5-Land via CDS API
-# ---------------------------------------------------------------------------
-
-def download_rainfall_era5(year: int, month: int, out_path: str) -> bool:
-    """
-    Download ERA5-Land total precipitation for the given month.
-    Requires: pip install cdsapi  and  ~/.cdsapirc with your free ECMWF key.
-    See: https://cds.climate.copernicus.eu/api-how-to
-    """
-    try:
-        import cdsapi  # type: ignore
-    except ImportError:
-        log.warning("cdsapi not installed — run: pip install cdsapi")
-        return False
-
-    log.info("Downloading ERA5-Land rainfall for %d-%02d …", year, month)
-    c = cdsapi.Client()
-    tmp_nc = out_path.replace(".tif", ".nc")
-    try:
-        c.retrieve(
-            "reanalysis-era5-land-monthly-means",
-            {
-                "product_type": "monthly_averaged_reanalysis",
-                "variable": "total_precipitation",
-                "year": str(year),
-                "month": f"{month:02d}",
-                "time": "00:00",
-                "area": [BBOX["north"], BBOX["west"], BBOX["south"], BBOX["east"]],
-                "format": "netcdf",
-            },
-            tmp_nc,
-        )
-        # Convert mm/s → mm/month and write as GeoTIFF
-        _nc_to_geotiff(tmp_nc, out_path, year, month)
-        os.remove(tmp_nc)
-        log.info("Rainfall saved → %s", out_path)
+    except SystemExit as e:
+        # Script called sys.exit(1) — treat as failure
+        if e.code != 0:
+            log.error("Script %s exited with code %s", script_name, e.code)
+            return False
         return True
     except Exception as e:
-        log.warning("ERA5 download failed: %s", e)
+        log.error("Script %s raised an exception: %s", script_name, e)
         return False
 
 
-def _nc_to_geotiff(nc_path: str, tif_path: str, year: int, month: int) -> None:
-    """Convert ERA5 NetCDF precipitation to GeoTIFF (mm/month)."""
-    import netCDF4 as nc  # type: ignore
-    ds = nc.Dataset(nc_path)
-    # ERA5 tp is in m — convert to mm
-    tp_var = ds.variables.get("tp") or ds.variables.get("mtpr")
-    data = tp_var[0, :, :] * 1000  # m → mm
-
-    lats = ds.variables["latitude"][:]
-    lons = ds.variables["longitude"][:]
-    res_lat = abs(float(lats[1] - lats[0]))
-    res_lon = abs(float(lons[1] - lons[0]))
-
-    transform = from_bounds(
-        float(lons.min()), float(lats.min()),
-        float(lons.max()), float(lats.max()),
-        data.shape[1], data.shape[0],
-    )
-    profile = {
-        "driver": "GTiff",
-        "dtype": "float64",
-        "width": data.shape[1],
-        "height": data.shape[0],
-        "count": 1,
-        "crs": CRS.from_epsg(4326),
-        "transform": transform,
-        "compress": "deflate",
-    }
-    # Flip latitude (ERA5 is N→S, rasterio expects S→N origin)
-    data = np.flipud(np.array(data))
-    with rasterio.open(tif_path, "w", **profile) as dst:
-        dst.write(data.astype(np.float64), 1)
-    ds.close()
+def force_delete_outputs() -> None:
+    """Delete all existing output files to force re-download."""
+    log.info("Force mode: deleting existing data files...")
+    for script in SCRIPTS:
+        path = os.path.join(DATA_DIR, script["output"])
+        if os.path.exists(path):
+            os.remove(path)
+            log.info("  Deleted: %s", path)
 
 
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
+def check_existing(script: dict) -> bool:
+    """Check if a script's output already exists."""
+    path = os.path.join(DATA_DIR, script["output"])
+    return os.path.exists(path)
+
+
+def print_summary(results: dict) -> None:
+    """Print a summary table of all script results."""
+    log.info("")
+    log.info("═" * 60)
+    log.info("  INGEST SUMMARY")
+    log.info("═" * 60)
+
+    all_required_ok = True
+    for script in SCRIPTS:
+        name   = script["name"]
+        output = script["output"]
+        req    = "required" if script["required"] else "optional"
+
+        status = results.get(name)
+        path   = os.path.join(DATA_DIR, output)
+        exists = os.path.exists(path)
+
+        if status == "skipped":
+            icon = "⏭"
+            msg  = "skipped (already exists)"
+        elif status == "success":
+            size_mb = os.path.getsize(path) / 1024 / 1024 if exists else 0
+            icon = "✓"
+            msg  = f"OK ({size_mb:.1f} MB)"
+        elif status == "failed":
+            icon = "✗"
+            msg  = "FAILED"
+            if script["required"]:
+                all_required_ok = False
+        else:
+            icon = "?"
+            msg  = "unknown"
+
+        log.info("  %s  %-25s [%s]  %s", icon, output, req, msg)
+
+    log.info("═" * 60)
+
+    if all_required_ok:
+        log.info("  All required data ready — run flood_risk.py next")
+    else:
+        log.info("  Some required data is missing — check errors above")
+
+    log.info("")
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Ingest flood risk input data")
-    parser.add_argument("--year",  type=int, default=2024)
-    parser.add_argument("--month", type=int, default=6)
+    parser = argparse.ArgumentParser(
+        description="GeoBuilders Africa — Data Ingest Pipeline"
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Delete existing files and re-download everything"
+    )
+    parser.add_argument(
+        "--skip-optional", action="store_true",
+        help="Skip optional scripts (none currently - all required for flood risk model)"
+    )
     args = parser.parse_args()
+
+    log.info("═" * 60)
+    log.info("  GeoBuilders Africa — Data Ingest Pipeline")
+    log.info("  Year: %s  Month: %s",
+             os.getenv("RAINFALL_YEAR", "2024"),
+             os.getenv("RAINFALL_MONTH", "6"))
+    log.info("═" * 60)
+    log.info("")
 
     os.makedirs(DATA_DIR, exist_ok=True)
 
-    dem_path      = os.path.join(DATA_DIR, "accra_dem.tif")
-    slope_path    = os.path.join(DATA_DIR, "accra_slope.tif")
-    rainfall_path = os.path.join(DATA_DIR, "accra_rainfall.tif")
+    # Force re-download if requested
+    if args.force:
+        force_delete_outputs()
 
-    # DEM
-    if not os.path.exists(dem_path):
-        ok = download_dem(dem_path)
-        if not ok:
-            log.error("Could not download DEM. Place accra_dem.tif in %s manually.", DATA_DIR)
-            sys.exit(1)
-    else:
-        log.info("DEM already exists, skipping download.")
+    results = {}
+    start_time = time.time()
 
-    # Slope (derived locally — no network)
-    if not os.path.exists(slope_path):
-        derive_slope(dem_path, slope_path)
-    else:
-        log.info("Slope already exists, skipping derivation.")
+    for script in SCRIPTS:
+        name = script["name"]
 
-    # Rainfall
-    if not os.path.exists(rainfall_path):
-        ok = download_rainfall_era5(args.year, args.month, rainfall_path)
-        if not ok:
-            log.warning(
-                "ERA5 download failed. Place accra_rainfall.tif in %s manually "
-                "or set up ~/.cdsapirc — see https://cds.climate.copernicus.eu/api-how-to",
-                DATA_DIR,
-            )
-    else:
-        log.info("Rainfall already exists, skipping download.")
+        # Skip optional scripts if flag is set
+        if args.skip_optional and not script["required"]:
+            log.info("Skipping optional: %s", name)
+            results[name] = "skipped"
+            continue
 
-    log.info("Ingestion complete ✓")
+        # Skip if output already exists (and not in force mode)
+        if check_existing(script):
+            log.info("Already exists: %s — skipping", script["output"])
+            results[name] = "skipped"
+            continue
+
+        log.info("")
+        log.info("─── Running: %s (%s) ───", name, script["description"])
+
+        t0 = time.time()
+        success = run_script(name)
+        elapsed = time.time() - t0
+
+        if success:
+            log.info("Completed in %.1fs: %s", elapsed, name)
+            results[name] = "success"
+        else:
+            log.error("Failed: %s", name)
+            results[name] = "failed"
+
+            # Stop pipeline if a required script fails
+            if script["required"]:
+                log.error("Required script failed — stopping pipeline")
+                break
+
+    total_elapsed = time.time() - start_time
+    log.info("")
+    log.info("Total ingest time: %.1fs", total_elapsed)
+
+    print_summary(results)
+
+    # Exit with error code if any required script failed
+    failed_required = [
+        s["name"] for s in SCRIPTS
+        if s["required"] and results.get(s["name"]) == "failed"
+    ]
+    if failed_required:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

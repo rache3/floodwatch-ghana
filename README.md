@@ -1,111 +1,161 @@
-# Flood Risk Mapping Pipeline — Greater Accra Region
+# FloodWatch Ghana — Flood Risk Intelligence Application
+### Greater Accra Region
 
-**Author:** Rachel Atia  
-**Live map:** https://rache3.github.io/flood-risk-mapping-greater-accra  
-**TiTiler API:** https://titiler-244163528833.us-central1.run.app/health  
-**Stack:** GEE · Python · Docker · GCP Cloud Run · GCS · TiTiler · MapLibre · GitHub Actions
+**Author:** Rachel Atia · GeoBuilders Africa  
+**Version:** v0.1 (Baseline Risk)
+**Live map:** https://floodwatch.geobuildersafrica.com  
+**Company:** https://geobuildersafrica.com  
+**GitHub:** https://github.com/rache3/floodwatch-ghana
 
 ---
 
-## What this is
+## Overview
 
-A cloud-native, automated flood risk mapping pipeline for Greater Accra, Ghana. It takes three geospatial raster inputs — elevation (DEM), rainfall, and slope — normalises them, applies a weighted risk model, and serves the output as a live interactive web map.
+An automated flood risk mapping pipeline for Greater Accra, Ghana. The system ingests five geospatial datasets, normalises and combines them into a weighted composite risk score, and serves the output as a live interactive web map updated monthly.
 
-This is a **Digital Twin prototype** — a living system that updates on a schedule and serves results via a public web map, rather than a static GIS output.
+Greater Accra is the pilot region. The pipeline is designed to scale across all regions of Ghana and other African cities.
 
 ---
 
 ## Live map
 
-> https://rache3.github.io/flood-risk-mapping-greater-accra
+> **https://floodwatch.geobuildersafrica.com**
 
-Features:
 - Flood risk raster rendered with plasma colormap (0 = low risk, 1 = high risk)
-- District boundary overlay (GADM v4.1)
-- Layer visibility toggles and opacity slider
-- Click on any district for details
+- All 29 districts of Greater Accra with boundary overlays
+- Click any district for mean, max, median, std deviation, and risk distribution
+- Layer toggles and opacity control
+- Validation badge — validated against May 18, 2025 Greater Accra floods
 
 ---
 
-## Architecture
+## Validation
 
-```
-Input rasters (DEM · rainfall · slope)
-              │
-              ▼
-    scripts/ingest.py          ← auto-downloads data from Copernicus + ERA5
-              │
-              ▼
-    scripts/flood_risk.py      ← normalises, scores, writes COG
-              │
-              ▼
-    scripts/upload_gcs.py      ← uploads COG to GCS bucket
-              │
-              ▼
-    Google Cloud Storage       ← stores flood_risk_map.cog.tif + GeoJSON
-              │
-              ▼
-    TiTiler on Cloud Run       ← serves COG as XYZ map tiles
-              │
-              ▼
-    docs/index.html            ← MapLibre web map (GitHub Pages)
-```
+FloodWatch Ghana v0.1 underwent **qualitative validation** against the **May 18, 2025 Greater Accra flood event** — 132.20mm of rainfall, 4 deaths, 3,000+ displaced.
 
-Orchestrated by **GitHub Actions** — runs monthly on a cron schedule or manually via the Actions UI. Authentication uses **Workload Identity Federation** — no API keys or secrets stored anywhere.
+Full Methodology & District Leaderboard: [docs/METHODOLOGY.md](./docs/METHODOLOGY.md)
+
+Qualitative validation compares the model's district-level risk rankings against documented flood locations from news reports and official sources. It does not use satellite-derived flood extent maps — that quantitative validation is planned for v1.1 using Sentinel-1 SAR imagery via Google Earth Engine.
+
+**Result: MODERATE ✓**
+
+Flooded districts mean risk score: **0.5983** vs non-flooded: **0.5874** (+0.0109)
+
+All 3 chronically high-risk flood zones correctly ranked in the top 4 districts. The 4 districts that were missed (Adenta, La-Nkwantanang-Madina, Tema, TemaWest) experienced flash flooding driven by extreme rainfall (132mm) — a separate risk category not captured by the static structural model. This is an expected limitation of v0.1 and informs the roadmap for v1.1.
+
+| District | Rank | Percentile | Flooded May 2025 |
+|---|---|---|---|
+| WeijaGbawe | 2 of 29 | top 93% | 🔴 YES |
+| GaCentral (Kaneshie) | 3 of 29 | top 90% | 🔴 YES |
+| Accra (Adabraka) | 4 of 29 | top 86% | 🔴 YES |
+| Tema | 20 of 29 | top 31% | 🔴 YES |
+| TemaWest | 21 of 29 | top 28% | 🔴 YES |
+| La-Nkwantanang-Madina (Oyarifa/Abokobi) | 24 of 29 | top 17% | 🔴 YES |
+| Adenta | 25 of 29 | top 14% | 🔴 YES |
+
+**Flooded districts mean risk: 0.5983 vs non-flooded: 0.5874**
+
+3 of 7 flooded districts ranked in the top 4 risk zones. Districts that ranked lower but flooded (Adenta, La-Nkwantanang-Madina) experienced **flash flooding** driven by extreme rainfall rather than chronic structural vulnerability — a known limitation of the current static model.
+
+Full Methodology & District Leaderboard: [docs/METHODOLOGY.md](./docs/METHODOLOGY.md)
 
 ---
 
 ## Risk model
 
 ```
-Risk = 0.40 × (1 - norm_DEM) + 0.35 × norm_Rainfall + 0.25 × (1 - norm_Slope)
+Risk = 0.30 × (1 − norm_DEM)
+     + 0.25 × norm_Rainfall
+     + 0.20 × (1 − norm_Slope)
+     + 0.15 × norm_Landcover
+     + 0.10 × (1 − norm_Waterbodies)
 ```
 
-| Layer | Weight | Direction | Rationale |
-|---|---|---|---|
-| DEM / Elevation | 40% | Inverted | Low-lying areas flood first |
-| ERA5 Rainfall | 35% | Normal | Higher rainfall = higher risk |
-| Terrain Slope | 25% | Inverted | Flat terrain = poor drainage |
+| Layer | Weight | Direction | Source | Rationale |
+|---|---|---|---|---|
+| Elevation (SRTM DEM) | 30% | Inverted | OpenTopography | Low-lying areas accumulate water |
+| Precipitation | 25% | Normal | CHIRPS v2.0 / GPM IMERG | Higher rainfall increases runoff |
+| Terrain slope | 20% | Inverted | Derived from SRTM | Flat terrain drains poorly |
+| Land cover imperviousness | 15% | Normal | ESA WorldCover 2021 | Impervious surfaces increase runoff |
+| Distance to water bodies | 10% | Inverted | OpenStreetMap | Proximity to rivers increases risk |
 
-Output range: **0 (low risk) → 1 (high risk)**
+Each layer is min-max normalised to [0, 1]. The composite score uses percentile-based reclassification at p25/p75, producing three risk tiers: low (0–0.33), moderate (0.33–0.67), and high (0.67–1.0).
 
 ---
 
-## Free tier cost breakdown
+## Pipeline architecture
 
-| Service | Role | Free limit | Monthly cost |
-|---|---|---|---|
-| Google Earth Engine | Satellite data processing | Free (research) | $0 |
-| GCP Cloud Run | TiTiler tile server + processing job | 2M req/month | $0 |
-| Google Cloud Storage | COG rasters + GeoJSON | 5 GB | $0 |
-| GitHub Actions | Pipeline orchestration | 2,000 min/month | $0 |
-| GitHub Pages | Web map hosting | Unlimited | $0 |
-| Workload Identity | Keyless GCP auth | Always free | $0 |
-| **Total** | | | **$0.00** |
+```
+Input data sources
+(OpenTopography · CHIRPS/GPM · ESA S3 · OpenStreetMap Overpass API)
+              │
+              ▼
+    scripts/ingest.py
+    ├── ingest_dem.py          ← SRTM 30m DEM via OpenTopography API
+    ├── ingest_slope.py        ← Slope derived from DEM using NumPy gradient
+    ├── ingest_rainfall.py     ← GPM IMERG Final → Late → ERA5 → CHIRPS fallback
+    ├── ingest_landcover.py    ← ESA WorldCover 2021 → imperviousness fraction
+    ├── ingest_waterbodies.py  ← OSM water features → distance raster
+    └── ingest_aod.py          ← MODIS/MERRA-2 AOD → quality flagging (optional)
+              │
+              ▼
+    scripts/flood_risk.py
+    ├── Align all layers to DEM reference grid
+    ├── Min-max normalisation per layer
+    ├── Weighted composite risk score
+    ├── Percentile-based reclassification
+    ├── Mask to Greater Accra boundary
+    └── Write Cloud-Optimised GeoTIFF (COG)
+              │
+              ▼
+    scripts/upload_gcs.py      ← Upload COG and GeoJSON to GCS
+              │
+              ▼
+    Google Cloud Storage       ← flood_risk_map.cog.tif + district GeoJSON
+              │
+              ▼
+    TiTiler on Cloud Run       ← Serves COG as XYZ tiles
+              │
+              ▼
+    docs/index.html            ← MapLibre GL JS web map (GitHub Pages)
+```
+
+Orchestrated by **GitHub Actions** on a monthly cron schedule. Authentication uses **Workload Identity Federation** — no API keys stored in the repository.
 
 ---
 
 ## Repository structure
 
 ```
-flood-risk-mapping-greater-accra/
+floodwatch-ghana/
 ├── .github/
 │   └── workflows/
-│       └── pipeline.yml       # GitHub Actions — monthly cron + manual trigger
-├── docker/
-│   ├── Dockerfile             # Processing container (Python + rasterio + GDAL)
-│   └── requirements.txt
+│       ├── ci.yml             # Lint, structure validation, syntax checks
+│       └── pipeline.yml       # Monthly pipeline — build, process, upload
 ├── scripts/
-│   ├── ingest.py              # Auto-downloads DEM, derives slope, fetches rainfall
-│   ├── flood_risk.py          # Core processing — normalise, score, write COG
-│   └── upload_gcs.py          # Upload outputs to Google Cloud Storage
-├── titiler/
-│   └── main.py                # TiTiler FastAPI tile server
+│   ├── ingest.py              # Orchestrator
+│   ├── ingest_dem.py          # SRTM DEM download
+│   ├── ingest_slope.py        # Slope derivation
+│   ├── ingest_rainfall.py     # GPM IMERG / CHIRPS precipitation
+│   ├── ingest_landcover.py    # ESA WorldCover
+│   ├── ingest_waterbodies.py  # OSM water features
+│   ├── ingest_aod.py          # AOD quality flagging
+│   ├── flood_risk.py          # Risk model
+│   ├── upload_gcs.py          # GCS upload
+│   └── validate_flood_risk.py # Validation against historical flood events
+├── terraform/
+│   ├── main.tf
+│   ├── variables.tf
+│   └── outputs.tf
 ├── docs/
-│   └── index.html             # MapLibre GL JS web map (served by GitHub Pages)
-├── .env.example               # Configuration template — copy to .env and fill in
-├── setup.sh                   # One-time GCP infrastructure setup script
-├── PIPELINE_GUIDE.md          # Full user guide with HCL/Terraform section
+│   ├── index.html         # MapLibre GL JS web map
+│   └── METHODOLOGY.md     # Risk model methodology & scorecard
+├── output/
+│   └── validation_may2025.json # Validation results
+├── data/
+│   └── gadm41_GHA_accra.json  # District boundaries
+├── .env.example               # Configuration template
+├── requirements.txt
 └── README.md
 ```
 
@@ -113,118 +163,60 @@ flood-risk-mapping-greater-accra/
 
 ## Quickstart — run locally
 
-### 1. Clone the repo
-
 ```bash
-git clone https://github.com/rache3/flood-risk-mapping-greater-accra.git
-cd flood-risk-mapping-greater-accra
-```
+git clone https://github.com/rache3/floodwatch-ghana.git
+cd floodwatch-ghana
 
-### 2. Install dependencies
+pip install -r requirements.txt
 
-```bash
-pip install rasterio numpy python-dotenv google-cloud-storage
-```
-
-### 3. Configure
-
-```bash
 cp .env.example .env
-# Open .env and fill in your GCP project ID, bucket name, bounding box etc.
+# Edit .env with your credentials
+
+python scripts/ingest.py        # Download all input data
+python scripts/flood_risk.py    # Process and write COG
+python scripts/upload_gcs.py    # Upload to GCS
+
+# Optional: run validation
+python scripts/validate_flood_risk.py
 ```
-
-### 4. Run the pipeline
-
-```bash
-# Download input data
-python scripts/ingest.py
-
-# Process and generate flood risk COG
-python scripts/flood_risk.py
-
-# Upload to GCS
-python scripts/upload_gcs.py
-```
-
----
-
-## Quickstart — deploy to GCP
-
-### 1. Set up GCP infrastructure (one time only)
-
-```bash
-# Fill in .env first, then:
-bash setup.sh
-```
-
-### 2. Build and deploy TiTiler
-
-```bash
-docker build -f docker/Dockerfile -t gcr.io/YOUR_PROJECT_ID/titiler .
-gcloud auth configure-docker
-docker push gcr.io/YOUR_PROJECT_ID/titiler
-gcloud run deploy titiler \
-  --image gcr.io/YOUR_PROJECT_ID/titiler \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --memory 512Mi \
-  --min-instances 0
-```
-
-### 3. Add GitHub repository variables
-
-Go to **Settings → Secrets and variables → Actions → Variables** and add:
-
-| Variable | Value |
-|---|---|
-| `GCP_PROJECT_ID` | your GCP project ID |
-| `GCP_PROJECT_NUMBER` | your GCP project number |
-| `GCP_REGION` | `us-central1` |
-| `GCS_BUCKET` | your bucket name |
-| `WORKLOAD_IDENTITY_PROVIDER` | your WIF provider path |
-| `SERVICE_ACCOUNT` | your service account email |
-
-### 4. Enable GitHub Pages
-
-**Settings → Pages → Source:** branch `main`, folder `/docs`
-
----
-
-## Trigger the pipeline manually
-
-Go to **Actions → Flood Risk Pipeline → Run workflow** and optionally set the rainfall year and month.
-
----
-
-## Adapting to a different study area
-
-1. Update the bounding box in `.env` — use your area's extent from QGIS
-2. Replace `gadm41_GHA_2.json` with the GADM boundary for your country/region
-3. Update the `NAME_1` filter in `mask_raster.py` to match your region name
-4. Run `bash setup.sh` to provision GCP resources
-5. Deploy and push
-
----
-
-## Documentation
-
-See [PIPELINE_GUIDE.md](PIPELINE_GUIDE.md) for the full user guide including:
-- Step-by-step setup instructions
-- HCL / Terraform infrastructure as code
-- Troubleshooting common errors
-- How to update the data
 
 ---
 
 ## Data sources
 
-| Dataset | Source | Resolution | License |
+| Dataset | Source | Resolution | Auth |
 |---|---|---|---|
-| DEM | Copernicus GLO-30 via OpenTopography | 30m | Free |
-| Rainfall | ERA5-Land via ECMWF CDS | ~9km | Free (research) |
-| Slope | Derived from DEM via GDAL | 30m | — |
-| Boundaries | GADM v4.1 | — | Free (research) |
+| Elevation (DEM) | SRTM GL1 via OpenTopography | 30m | Free API key |
+| Precipitation | CHIRPS v2.0 / GPM IMERG | 5km / 10km | Free / Earthdata |
+| Slope | Derived from SRTM | 30m | — |
+| Land cover | ESA WorldCover 2021 | 10m | Free |
+| Water bodies | OpenStreetMap Overpass API | Variable | Open |
+| Geocoding | Photon (Komoot / OSM) | — | Open |
+| District boundaries | GADM v4.1 | — | Free |
 
 ---
 
-*Greater Accra Region, Ghana · EPSG:4326 · Rachel Atia · 2024–2026*
+## Infrastructure
+
+| Service | Role |
+|---|---|
+| Google Cloud Run | TiTiler tile server |
+| Google Cloud Storage | COG raster and GeoJSON |
+| GitHub Actions | CI and monthly pipeline |
+| GitHub Pages | Web map hosting |
+| Terraform | Infrastructure as code |
+| Workload Identity Federation | Keyless GCP authentication |
+
+---
+
+## Known limitations
+
+- **Validation is qualitative** — district risk rankings compared against news-reported flood locations. Quantitative validation using Sentinel-1 SAR flood extent maps is planned for v1.1
+- Static risk model captures chronic structural vulnerability — not event-driven flash flooding
+- Districts like Adenta and La-Nkwantanang-Madina may flood under extreme rainfall events not predicted by the static model
+- Real-time rainfall thresholds via GPM IMERG Late Run are planned for v1.1
+- Greater Accra pilot only — expansion to other Ghana regions in progress
+
+---
+
+*Greater Accra Region, Ghana · EPSG:4326 · Rachel Atia · GeoBuilders Africa · 2025–2026*

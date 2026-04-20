@@ -2,8 +2,8 @@
 
 **Project:** Cloud-Native Flood Risk Mapping Pipeline, Greater Accra Region  
 **Author:** Rachel Atia  
-**Repo:** [rache3/flood-risk-mapping-greater-accra](https://github.com/rache3/flood-risk-mapping-greater-accra)  
-**Live map:** https://rache3.github.io/flood-risk-mapping-greater-accra
+**Repo:** [rache3/floodwatch-ghana](https://github.com/rache3/floodwatch-ghana)  
+**Live map:** https://rache3.github.io/floodwatch-ghana
 
 ---
 
@@ -21,24 +21,27 @@
 
 ## 1. Pipeline Overview
 
-This pipeline takes three geospatial raster inputs — elevation (DEM), rainfall, and slope — and combines them into a weighted flood risk score for Greater Accra. The output is served as an interactive web map.
+This pipeline takes five geospatial raster inputs — elevation (DEM), rainfall, slope, land cover, and water proximity — and combines them into a weighted flood risk score for Greater Accra. The output is served as an interactive web map.
 
 ### How it flows
 
 ```
-Input rasters (DEM, rainfall, slope)
+Input rasters (DEM, rainfall, slope, landcover, water proximity)
           │
           ▼
   scripts/ingest.py          ← downloads/prepares data
           │
           ▼
-  scripts/flood_risk.py      ← normalises, scores, writes COG
+  scripts/flood_risk.py      ← normalises, scores, percentile classification, writes COG
           │
           ▼
-  scripts/upload_gcs.py      ← uploads COG to GCS bucket
+  mask_raster.py             ← masks to Greater Accra boundary (removes tile bleeding)
           │
           ▼
-  Google Cloud Storage       ← stores flood_risk_map.cog.tif
+  scripts/upload_gcs.py      ← uploads masked COG to GCS bucket
+          │
+          ▼
+  Google Cloud Storage       ← stores flood_risk_masked.cog.tif
           │
           ▼
   TiTiler on Cloud Run       ← serves the COG as XYZ map tiles
@@ -50,13 +53,23 @@ Input rasters (DEM, rainfall, slope)
 ### Risk score formula
 
 ```
-Risk = 0.40 × (1 - norm_DEM) + 0.35 × norm_Rainfall + 0.25 × (1 - norm_Slope)
+Risk = 0.30 × (1 - norm_DEM) + 0.25 × norm_Rainfall + 0.20 × (1 - norm_Slope) + 0.15 × norm_Landcover + 0.10 × (1 - norm_Waterbodies)
 ```
 
 - **DEM** is inverted — low elevation = high risk
 - **Rainfall** is normal — high rainfall = high risk
 - **Slope** is inverted — flat terrain = high risk (poor drainage)
-- Output range: **0 (low risk) → 1 (high risk)**
+- **Land cover** is normal — impervious surfaces = high risk
+- **Water proximity** is inverted — close to water = high risk
+
+**Enhanced Classification**: The pipeline now uses percentile-based risk tiers for adaptive classification:
+- **Low risk**: 0 - 25th percentile
+- **Moderate risk**: 25th - 75th percentile  
+- **High risk**: 75th percentile - maximum
+
+This provides better score distribution and three distinct risk categories instead of absolute thresholds.
+
+Output range: **0 (low risk) → 1 (high risk)**
 
 ---
 
@@ -76,8 +89,8 @@ Risk = 0.40 × (1 - norm_DEM) + 0.35 × norm_Rainfall + 0.25 × (1 - norm_Slope)
 Open your terminal and run:
 
 ```bash
-git clone https://github.com/rache3/flood-risk-mapping-greater-accra.git
-cd flood-risk-mapping-greater-accra
+git clone https://github.com/rache3/floodwatch-ghana.git
+cd floodwatch-ghana
 ```
 
 ### Step 2 — Install Python dependencies
@@ -93,7 +106,7 @@ pip install rasterio numpy boto3 gdal
 Put these files in the root of the project folder:
 
 ```
-flood-risk-mapping-greater-accra/
+floodwatch-ghana/
 ├── accra_dem.tif          ← elevation raster (int16, EPSG:4326)
 ├── accra_rainfall.tif     ← rainfall raster (float64, EPSG:4326)
 ├── accra_slope.tif        ← slope raster (float32, EPSG:4326)
@@ -158,8 +171,9 @@ Expected output:
 ```
 
 Two files will appear in the `output/` folder:
-- `flood_risk_map.tif` — standard GeoTIFF
-- `flood_risk_map.cog.tif` — Cloud-Optimised GeoTIFF (for TiTiler)
+- `flood_risk_map.tif` — standard GeoTIFF (full rectangular extent)
+- `flood_risk_map.cog.tif` — Cloud-Optimised GeoTIFF (full rectangular extent)
+- `flood_risk_masked.tif` — boundary-masked GeoTIFF (Greater Accra only, no tile bleeding)
 
 ### Step 3 — Mask raster to Greater Accra boundary
 
@@ -179,8 +193,8 @@ This creates `flood_risk_masked.tif` in your project folder.
 ### Step 4 — Upload to GCS
 
 ```bash
-gsutil cp flood_risk_masked.tif gs://accra-flood-risk/rasters/flood_risk_map.cog.tif
-gsutil cp gadm41_GHA_2.json gs://accra-flood-risk/vectors/gadm41_GHA_2.json
+gsutil cp flood_risk_masked.tif gs://YOUR_BUCKET_NAME/rasters/flood_risk_map.cog.tif
+gsutil cp gadm41_GHA_2.json gs://YOUR_BUCKET_NAME/vectors/gadm41_GHA_2.json
 ```
 
 ### Adjusting the risk model weights
@@ -220,14 +234,14 @@ Run these commands once in the Google Cloud SDK Shell:
 gcloud services enable run.googleapis.com containerregistry.googleapis.com secretmanager.googleapis.com storage.googleapis.com
 
 # Create GCS bucket
-gsutil mb -l us-central1 gs://accra-flood-risk
+gsutil mb -l us-central1 gs://YOUR_BUCKET_NAME
 
 # Make bucket publicly readable
-gsutil iam ch allUsers:objectViewer gs://accra-flood-risk
+gsutil iam ch allUsers:objectViewer gs://YOUR_BUCKET_NAME
 
 # Set CORS policy (allows the web map to fetch files from GCS)
 echo '[{"origin":["*"],"method":["GET"],"responseHeader":["Content-Type"],"maxAgeSeconds":3600}]' > cors.json
-gsutil cors set cors.json gs://accra-flood-risk
+gsutil cors set cors.json gs://YOUR_BUCKET_NAME
 
 # Create service account for GitHub Actions
 gcloud iam service-accounts create github-pipeline --display-name="GitHub Actions Pipeline"
@@ -303,7 +317,7 @@ Open `docs/index.html` and update these two lines with your actual URLs:
 
 ```javascript
 const TITILER_URL = "https://titiler-XXXXXXXXX-uc.a.run.app";
-const R2_PUBLIC   = "https://storage.googleapis.com/accra-flood-risk";
+const R2_PUBLIC   = "https://storage.googleapis.com/YOUR_BUCKET_NAME";
 ```
 
 ### 4.5  Enable GitHub Pages
@@ -390,7 +404,7 @@ variable "github_repo" {
 variable "bucket_name" {
   description = "Name for the GCS bucket"
   type        = string
-  default     = "accra-flood-risk"
+  default     = "YOUR_BUCKET_NAME"
 }
 
 variable "titiler_image" {
@@ -404,13 +418,13 @@ variable "titiler_image" {
 > ⚠️ Add `terraform.tfvars` to your `.gitignore` — never commit this file.
 
 ```hcl
-project_id      = "project-a93d8eb8-d695-49f7-857"
-project_number  = "244163528833"
+project_id      = "YOUR_PROJECT_ID"
+project_number  = "YOUR_PROJECT_NUMBER"
 region          = "us-central1"
 github_username = "rache3"
-github_repo     = "flood-risk-mapping-greater-accra"
-bucket_name     = "accra-flood-risk"
-titiler_image   = "gcr.io/project-a93d8eb8-d695-49f7-857/titiler:latest"
+github_repo     = "floodwatch-ghana"
+bucket_name     = "YOUR_BUCKET_NAME"
+titiler_image   = "gcr.io/YOUR_PROJECT_ID/titiler:latest"
 ```
 
 ### `terraform/main.tf`
@@ -641,13 +655,13 @@ When you have new DEM, rainfall, or slope data:
    ```bash
    python scripts/flood_risk.py
    ```
-3. Re-run the masking script:
+3. Re-run the masking script (removes rectangular bounding box):
    ```bash
    python mask_raster.py
    ```
 4. Upload the new masked raster to GCS:
    ```bash
-   gsutil cp flood_risk_masked.tif gs://accra-flood-risk/rasters/flood_risk_map.cog.tif
+   gsutil cp flood_risk_masked.tif gs://YOUR_BUCKET_NAME/rasters/flood_risk_map.cog.tif
    ```
 5. Hard refresh the map in your browser with `Ctrl + Shift + R`
 
@@ -656,7 +670,7 @@ When you have new DEM, rainfall, or slope data:
 If you have an updated GeoJSON:
 
 ```bash
-gsutil cp gadm41_GHA_2.json gs://accra-flood-risk/vectors/gadm41_GHA_2.json
+gsutil cp gadm41_GHA_2.json gs://YOUR_BUCKET_NAME/vectors/gadm41_GHA_2.json
 ```
 
 ### Change the map colormap
@@ -699,7 +713,7 @@ Should return `{"status":"ok"}`. If it fails, redeploy TiTiler (see section 4.3)
 
 **Check 2** — Is the COG in GCS?
 ```bash
-gsutil ls -l gs://accra-flood-risk/rasters/
+gsutil ls -l gs://YOUR_BUCKET_NAME/rasters/
 ```
 Should show `flood_risk_map.cog.tif`. If not, re-upload it.
 
@@ -713,7 +727,7 @@ This is a CORS issue. Fix it by running:
 
 ```bash
 echo '[{"origin":["*"],"method":["GET"],"responseHeader":["Content-Type"],"maxAgeSeconds":3600}]' > cors.json
-gsutil cors set cors.json gs://accra-flood-risk
+gsutil cors set cors.json gs://YOUR_BUCKET_NAME
 ```
 
 Then hard refresh the map with `Ctrl + Shift + R`.
@@ -763,8 +777,10 @@ python mask_raster.py
 
 Then upload the masked output:
 ```bash
-gsutil cp flood_risk_masked.tif gs://accra-flood-risk/rasters/flood_risk_map.cog.tif
+gsutil cp flood_risk_masked.tif gs://YOUR_BUCKET_NAME/rasters/flood_risk_map.cog.tif
 ```
+
+This creates `flood_risk_masked.tif` which removes the rectangular bounding box and prevents tile bleeding on the map.
 
 ---
 
@@ -813,4 +829,4 @@ Increment the number each time you update the raster. Then commit and push.
 
 ---
 
-*Guide generated: March 2026 | Rachel Atia | github.com/rache3/flood-risk-mapping-greater-accra*
+*Guide generated: March 2026 | Rachel Atia | github.com/rache3/floodwatch-ghana*
