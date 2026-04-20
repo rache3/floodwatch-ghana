@@ -6,8 +6,7 @@ const GEOJSON_URL = "./gadm41_GHA_accra.json";
 const TILE_URL = `${TITILER_URL}/cog/tiles/{z}/{x}/{y}` +
   `?url=${encodeURIComponent(COG_URL)}` +
   "&colormap_name=plasma" +
-  "&rescale=0,1" +
-  "&nodata=nan";
+  "&rescale=0,1";
 
 const map = new maplibregl.Map({
   container: "map",

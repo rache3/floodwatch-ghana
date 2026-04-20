@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:floodwatch.geobuildersafrica.com)"
+      "WebFetch(domain:floodwatch.geobuildersafrica.com)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
