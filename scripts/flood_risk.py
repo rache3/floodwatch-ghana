@@ -180,9 +180,7 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
 
     log.info("Masking to %d district polygons...", len(accra_shapes))
 
-    # Merge all districts into one polygon and shrink slightly
-    # to prevent pixel bleeding at the boundary edge
-    merged = unary_union(accra_shapes).buffer(-0.001)
+    merged = unary_union(accra_shapes)
 
     with rasterio.open(src_path) as src:
         out_image, out_transform = rio_mask(
