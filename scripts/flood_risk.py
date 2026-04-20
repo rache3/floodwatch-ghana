@@ -181,6 +181,13 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
     log.info("Masking to %d district polygons...", len(accra_shapes))
 
     merged = unary_union(accra_shapes)
+    
+    # Shrink boundary by 0.001 degrees to eliminate pixel bleeding at edges
+    # This prevents pixels from extending beyond the true district boundary
+    merged = merged.buffer(-0.001)
+    if merged.is_empty:
+        log.warning("Boundary buffer resulted in empty geometry — using original boundary")
+        merged = unary_union(accra_shapes)
 
     with rasterio.open(src_path) as src:
         out_image, out_transform = rio_mask(
@@ -188,7 +195,7 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
             [mapping(merged)],
             crop=True,
             nodata=np.nan,
-            all_touched=False,
+            all_touched=True,
         )
         out_meta = src.meta.copy()
         out_meta.update({
@@ -217,7 +224,7 @@ def write_cog(src_path: str, dst_path: str) -> None:
     }
     with rasterio.open(src_path) as src:
         with MemoryFile() as memfile:
-            with memfile.open(**src.profile) as mem:
+            with memfile.open(**{**src.profile, "tiled": True, "blockxsize": 512, "blockysize": 512}) as mem:
                 mem.write(src.read())
                 mem.build_overviews([2, 4, 8, 16, 32], Resampling.average)
                 mem.update_tags(ns="rio_overview", resampling="average")
