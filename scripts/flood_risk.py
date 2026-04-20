@@ -214,7 +214,7 @@ def write_cog(src_path: str, dst_path: str) -> None:
         "blockxsize":        512,
         "blockysize":        512,
         "compress":          "deflate",
-        "predictor":         2,
+        "predictor":         3,
         "copy_src_overviews": True,
     }
     with rasterio.open(src_path) as src:
