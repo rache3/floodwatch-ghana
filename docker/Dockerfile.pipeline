@@ -27,5 +27,9 @@ RUN pip install --no-cache-dir \
 # Copy pipeline scripts
 COPY scripts/ ./scripts/
 
+# Bundle district boundary file needed for masking and GeoJSON upload
+COPY data/gadm41_GHA_2.json ./data/gadm41_GHA_2.json
+
 # Run the full pipeline: ingest → flood_risk → upload
 CMD ["sh", "-c", "python scripts/ingest.py && python scripts/flood_risk.py && python scripts/upload_gcs.py"]
+
