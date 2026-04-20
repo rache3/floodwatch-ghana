@@ -6,7 +6,8 @@ const GEOJSON_URL = "./gadm41_GHA_accra.json";
 const TILE_URL = `${TITILER_URL}/cog/tiles/{z}/{x}/{y}` +
   `?url=${encodeURIComponent(COG_URL)}` +
   "&colormap_name=plasma" +
-  "&rescale=0,1";
+  "&rescale=0,1" +
+  "&nodata=nan";
 
 const map = new maplibregl.Map({
   container: "map",
@@ -57,13 +58,20 @@ map.on("load", () => {
     data: GEOJSON_URL,
   });
 
-  map.addLayer({
-    id: "flood-risk-mask",
-    type: "fill",
-    source: "boundaries",
-    paint: { "fill-color": "#1a1d26", "fill-opacity": 1 },
-    filter: ["!=", ["get", "NAME_1"], "GreaterAccra"],
-  });
+  fetch(GEOJSON_URL)
+    .then(r => r.json())
+    .then(gj => {
+      const union = gj.features.reduce((acc, feat) => turf.union(acc, feat), gj.features[0]);
+      const outside = turf.difference(turf.bboxPolygon([-5, 3, 10, 12]), union);
+      if (!outside) return;
+      map.addSource("outer-mask", { type: "geojson", data: outside });
+      map.addLayer(
+        { id: "flood-risk-mask", type: "fill", source: "outer-mask",
+          paint: { "fill-color": "#1a1d26", "fill-opacity": 1 } },
+        "boundaries-line"
+      );
+    })
+    .catch(err => console.error("Mask build failed:", err));
 
   map.addLayer({
     id: "boundaries-line",

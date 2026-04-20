@@ -59,7 +59,7 @@ FILES_TO_UPLOAD = {
     os.path.join(OUTPUT_DIR, "flood_risk_map.tif"):     "rasters/flood_risk_map.tif",
 
     # District boundaries — used by the web map frontend
-    os.path.join(DATA_DIR, "gadm41_GHA_accra.json"):    "vectors/gadm41_GHA_accra.json",
+    os.path.join(DATA_DIR, "gadm41_GHA_2.json"):        "vectors/gadm41_GHA_2.json",
 }
 
 # Content types for each file extension
@@ -126,14 +126,11 @@ def upload_file(client, local_path: str, gcs_key: str, bucket_name: str) -> bool
         blob.content_type = content_type
 
         # Upload the file
+        # Note: public access is managed at bucket level via Uniform Bucket-Level
+        # Access IAM policy — per-object ACLs (make_public) are disabled.
         blob.upload_from_filename(local_path)
 
-        # Make publicly readable
-        # Required for TiTiler to read COG tiles and web map to load GeoJSON
-        blob.make_public()
-
         log.info("Upload complete ✓  gs://%s/%s", bucket_name, gcs_key)
-        log.info("Public URL: %s", blob.public_url)
         return True
 
     except Exception as e:
