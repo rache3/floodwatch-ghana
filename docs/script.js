@@ -58,21 +58,6 @@ map.on("load", () => {
     data: GEOJSON_URL,
   });
 
-  fetch(GEOJSON_URL)
-    .then(r => r.json())
-    .then(gj => {
-      const union = gj.features.reduce((acc, feat) => turf.union(acc, feat), gj.features[0]);
-      const outside = turf.difference(turf.bboxPolygon([-5, 3, 10, 12]), union);
-      if (!outside) return;
-      map.addSource("outer-mask", { type: "geojson", data: outside });
-      map.addLayer(
-        { id: "flood-risk-mask", type: "fill", source: "outer-mask",
-          paint: { "fill-color": "#1a1d26", "fill-opacity": 1 } },
-        "boundaries-line"
-      );
-    })
-    .catch(err => console.error("Mask build failed:", err));
-
   map.addLayer({
     id: "boundaries-line",
     type: "line",
