@@ -137,15 +137,7 @@ def normalise(arr, invert=False):
  
 
 def mask_to_boundary(src_path: str, dst_path: str) -> None:
-    """
-    Clip raster to Greater Accra district boundary.
-
-    Uses Shapely buffer(-0.001) to shrink the boundary slightly,
-    eliminating pixel bleeding at tile edges — a known issue with
-    TiTiler serving COGs that extend right to the boundary edge.
-
-    Falls back to copying the file unchanged if no boundary file is found.
-    """
+    """Clip raster to Greater Accra district boundary. Falls back to copying the file unchanged if no boundary file is found."""
     from rasterio.mask import mask as rio_mask
     from shapely.geometry import shape, mapping
     from shapely.ops import unary_union
@@ -181,13 +173,6 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
     log.info("Masking to %d district polygons...", len(accra_shapes))
 
     merged = unary_union(accra_shapes)
-    
-    # Shrink boundary by 0.001 degrees to eliminate pixel bleeding at edges
-    # This prevents pixels from extending beyond the true district boundary
-    merged = merged.buffer(-0.001)
-    if merged.is_empty:
-        log.warning("Boundary buffer resulted in empty geometry — using original boundary")
-        merged = unary_union(accra_shapes)
 
     with rasterio.open(src_path) as src:
         out_image, out_transform = rio_mask(
