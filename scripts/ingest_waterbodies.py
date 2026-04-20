@@ -111,12 +111,8 @@ def build_overpass_query(bbox: dict) -> str:
 def download_osm_water(output_geojson: str) -> bool:
     """
     Download water body geometries from OpenStreetMap via the Overpass API.
-
-    The Overpass API is free and does not require an API key.
-    Rate limits apply — avoid querying too frequently.
-    Public endpoint: https://overpass-api.de/api/interpreter
-
-    Includes exponential backoff retries to handle flaky API responses (429/504).
+    Rotates through multiple mirror servers and includes a User-Agent header
+    to avoid HTTP 406 rejections from GCP outbound IPs.
     """
     import urllib.parse
     import time
@@ -124,20 +120,34 @@ def download_osm_water(output_geojson: str) -> bool:
     log.info("Querying OpenStreetMap Overpass API for water features...")
 
     query = build_overpass_query(BBOX)
-    url = "https://overpass-api.de/api/interpreter"
-    
+
+    # Rotate through mirrors — Overpass blocks some GCP IPs on the primary server
+    overpass_endpoints = [
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    ]
+
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        # User-Agent is required by Overpass ToS — missing it causes HTTP 406
+        "User-Agent": "FloodWatchGhana/0.1 (https://github.com/rache3/floodwatch-ghana; rachelatia@geobuildersafrica.com)",
+    }
+
     max_retries = 5
-    retry_delay = 5  # seconds
+    retry_delay = 5
 
     for attempt in range(1, max_retries + 1):
+        # Rotate endpoint on each attempt
+        url = overpass_endpoints[(attempt - 1) % len(overpass_endpoints)]
         try:
             req = urllib.request.Request(
                 url,
                 data=urllib.parse.urlencode({"data": query}).encode("utf-8"),
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers=headers,
             )
 
-            log.info("Attempt %d/%d: Sending Overpass query (timeout: 180s)...", attempt, max_retries)
+            log.info("Attempt %d/%d via %s...", attempt, max_retries, url)
             with urllib.request.urlopen(req, timeout=200) as response:
                 raw = response.read().decode("utf-8")
 
@@ -149,9 +159,7 @@ def download_osm_water(output_geojson: str) -> bool:
                 log.warning("No water features returned — check bounding box")
                 return False
 
-            # Convert OSM JSON to GeoJSON
             geojson = osm_to_geojson(data)
-
             with open(output_geojson, "w") as f:
                 json.dump(geojson, f)
 
@@ -160,7 +168,7 @@ def download_osm_water(output_geojson: str) -> bool:
             return True
 
         except (urllib.error.HTTPError, urllib.error.URLError) as e:
-            log.warning("Overpass API attempt %d failed: %s", attempt, str(e))
+            log.warning("Attempt %d failed (%s): %s", attempt, url, str(e))
             if attempt < max_retries:
                 sleep_time = retry_delay * (2 ** (attempt - 1))
                 log.info("Retrying in %d seconds...", sleep_time)
@@ -171,7 +179,7 @@ def download_osm_water(output_geojson: str) -> bool:
         except Exception as e:
             log.error("Unexpected error during OSM ingest: %s", e)
             return False
-    
+
     return False
 
 
