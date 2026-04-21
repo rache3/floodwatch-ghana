@@ -130,6 +130,41 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Write Cloud Run env vars
+        env:
+          EARTHDATA_USER: ${{ secrets.EARTHDATA_USER }}
+          EARTHDATA_PASS: ${{ secrets.EARTHDATA_PASS }}
+          OPENTOPO_API_KEY: ${{ vars.OPENTOPO_API_KEY }}
+          RAINFALL_YEAR: ${{ github.event.inputs.year || '2024' }}
+          RAINFALL_MONTH: ${{ github.event.inputs.month || '6' }}
+        run: |
+          python3 -c '
+          import os, json
+          vals = {
+              "DATA_DIR": "/app/data",
+              "OUTPUT_DIR": "/app/output",
+              "GCS_BUCKET": os.environ["GCS_BUCKET"],
+              "OPENTOPO_API_KEY": os.environ.get("OPENTOPO_API_KEY", ""),
+              "EARTHDATA_USER": os.environ["EARTHDATA_USER"],
+              "EARTHDATA_PASS": os.environ["EARTHDATA_PASS"],
+              "RAINFALL_YEAR": os.environ.get("RAINFALL_YEAR", "2024"),
+              "RAINFALL_MONTH": os.environ.get("RAINFALL_MONTH", "6"),
+              "BBOX_WEST": "-0.60",
+              "BBOX_EAST": "0.75",
+              "BBOX_SOUTH": "5.35",
+              "BBOX_NORTH": "6.20",
+              "WEIGHT_DEM": "0.30",
+              "WEIGHT_RAINFALL": "0.25",
+              "WEIGHT_SLOPE": "0.20",
+              "WEIGHT_LANDCOVER": "0.15",
+              "WEIGHT_WATERBODIES": "0.10",
+          }
+          with open("/tmp/cloud-run-env.yaml", "w") as f:
+              for k, v in vals.items():
+                  f.write(k + ": " + json.dumps(v) + "\n")
+          print("Wrote /tmp/cloud-run-env.yaml")
+          '
+
       - name: Create or update Cloud Run job
         run: |
           gcloud run jobs create $JOB_NAME \
@@ -139,24 +174,7 @@ jobs:
             --cpu=4 \
             --max-retries=1 \
             --task-timeout=90m \
-            --set-env-vars="\
-              DATA_DIR=/app/data,\
-              OUTPUT_DIR=/app/output,\
-              GCS_BUCKET=$GCS_BUCKET,\
-              OPENTOPO_API_KEY=${{ vars.OPENTOPO_API_KEY }},\
-              EARTHDATA_USER=${{ secrets.EARTHDATA_USER }},\
-              EARTHDATA_PASS=${{ secrets.EARTHDATA_PASS }},\
-              RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
-              RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
-              BBOX_WEST=-0.60,\
-              BBOX_EAST=0.75,\
-              BBOX_SOUTH=5.35,\
-              BBOX_NORTH=6.20,\
-              WEIGHT_DEM=0.30,\
-              WEIGHT_RAINFALL=0.25,\
-              WEIGHT_SLOPE=0.20,\
-              WEIGHT_LANDCOVER=0.15,\
-              WEIGHT_WATERBODIES=0.10" \
+            --env-vars-file=/tmp/cloud-run-env.yaml \
             --project=$PROJECT_ID \
           || gcloud run jobs update $JOB_NAME \
             --image=$IMAGE:latest \
@@ -164,24 +182,7 @@ jobs:
             --memory=8Gi \
             --cpu=4 \
             --task-timeout=90m \
-            --set-env-vars="\
-              DATA_DIR=/app/data,\
-              OUTPUT_DIR=/app/output,\
-              GCS_BUCKET=$GCS_BUCKET,\
-              OPENTOPO_API_KEY=${{ vars.OPENTOPO_API_KEY }},\
-              EARTHDATA_USER=${{ secrets.EARTHDATA_USER }},\
-              EARTHDATA_PASS=${{ secrets.EARTHDATA_PASS }},\
-              RAINFALL_YEAR=${{ github.event.inputs.year || '2024' }},\
-              RAINFALL_MONTH=${{ github.event.inputs.month || '6' }},\
-              BBOX_WEST=-0.60,\
-              BBOX_EAST=0.75,\
-              BBOX_SOUTH=5.35,\
-              BBOX_NORTH=6.20,\
-              WEIGHT_DEM=0.30,\
-              WEIGHT_RAINFALL=0.25,\
-              WEIGHT_SLOPE=0.20,\
-              WEIGHT_LANDCOVER=0.15,\
-              WEIGHT_WATERBODIES=0.10" \
+            --env-vars-file=/tmp/cloud-run-env.yaml \
             --project=$PROJECT_ID
 
       - name: Execute Cloud Run job and wait
