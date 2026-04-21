@@ -4,8 +4,8 @@ import rasterio
 from rasterio.mask import mask
 import os
 
-geojson_path = "gadm41_GHA_accra.json"
-raster_path = "flood_risk_map.tif"
+geojson_path = "data/gadm41_GHA_accra.json"
+raster_path = "output/flood_risk_masked.tif"
 output_path = "docs/gadm41_GHA_accra.json"
 
 if not os.path.exists("docs"):

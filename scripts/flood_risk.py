@@ -134,7 +134,30 @@ def normalise(arr, invert=False):
         return np.zeros_like(arr, dtype=np.float32)
     norm = (arr - a_min) / (a_max - a_min)
     return (1.0 - norm).astype(np.float32) if invert else norm.astype(np.float32)
- 
+
+
+def validate_layer_coverage(layers, reference_mask):
+    """Fail fast if any aligned input layer has gaps over valid DEM pixels."""
+    bad_layers = []
+    total_reference = int(np.sum(reference_mask))
+
+    for name, arr in layers.items():
+        missing = reference_mask & ~np.isfinite(arr)
+        missing_count = int(np.sum(missing))
+        if missing_count:
+            missing_pct = 100.0 * missing_count / total_reference
+            bad_layers.append((name, missing_pct, missing_count))
+
+    if bad_layers:
+        details = ", ".join(
+            f"{name} missing {pct:.2f}% ({count:,} pixels)"
+            for name, pct, count in bad_layers
+        )
+        raise ValueError(
+            "Aligned input layers do not fully cover the DEM grid: "
+            f"{details}. Rebuild the source rasters before computing risk."
+        )
+
 
 def mask_to_boundary(src_path: str, dst_path: str) -> None:
     """Clip raster to Greater Accra district boundary. Falls back to copying the file unchanged if no boundary file is found."""
@@ -174,20 +197,24 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
 
     merged = unary_union(accra_shapes)
 
+    NODATA = -9999.0
+
     with rasterio.open(src_path) as src:
         out_image, out_transform = rio_mask(
             src,
             [mapping(merged)],
             crop=True,
-            nodata=np.nan,
+            nodata=NODATA,
             all_touched=True,
         )
+        # Replace any remaining NaN within boundary with sentinel
+        out_image[np.isnan(out_image)] = NODATA
         out_meta = src.meta.copy()
         out_meta.update({
             "height":    out_image.shape[1],
             "width":     out_image.shape[2],
             "transform": out_transform,
-            "nodata":    np.nan,
+            "nodata":    NODATA,
             "dtype":     "float32",
         })
         with rasterio.open(dst_path, "w", **out_meta) as dst:
@@ -198,6 +225,9 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
 
 def write_cog(src_path: str, dst_path: str) -> None:
     """Convert GeoTIFF to Cloud-Optimised GeoTIFF for TiTiler."""
+    with rasterio.open(src_path) as src:
+        src_nodata = src.nodata
+
     copy_opts = {
         "driver":            "GTiff",
         "tiled":             True,
@@ -206,6 +236,7 @@ def write_cog(src_path: str, dst_path: str) -> None:
         "compress":          "deflate",
         "predictor":         3,
         "copy_src_overviews": True,
+        "nodata":            src_nodata,
     }
     with rasterio.open(src_path) as src:
         with MemoryFile() as memfile:
@@ -271,6 +302,17 @@ def run():
     slope_norm       = normalise(slope_raw,       invert=True)   # flat = high risk
     landcover_norm   = normalise(landcover_raw,   invert=False)  # impervious = high risk
     waterbodies_norm = normalise(waterbodies_raw, invert=True)   # close to water = high risk
+
+    reference_valid = np.isfinite(dem_raw)
+    validate_layer_coverage(
+        {
+            "rainfall": rainfall_norm,
+            "slope": slope_norm,
+            "landcover": landcover_norm,
+            "waterbodies": waterbodies_norm,
+        },
+        reference_valid,
+    )
 
     # 4. Weighted composite score
     log.info("Computing weighted flood risk score...")
