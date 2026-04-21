@@ -137,15 +137,7 @@ def normalise(arr, invert=False):
  
 
 def mask_to_boundary(src_path: str, dst_path: str) -> None:
-    """
-    Clip raster to Greater Accra district boundary.
-
-    Uses Shapely buffer(-0.001) to shrink the boundary slightly,
-    eliminating pixel bleeding at tile edges — a known issue with
-    TiTiler serving COGs that extend right to the boundary edge.
-
-    Falls back to copying the file unchanged if no boundary file is found.
-    """
+    """Clip raster to Greater Accra district boundary. Falls back to copying the file unchanged if no boundary file is found."""
     from rasterio.mask import mask as rio_mask
     from shapely.geometry import shape, mapping
     from shapely.ops import unary_union
@@ -180,9 +172,7 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
 
     log.info("Masking to %d district polygons...", len(accra_shapes))
 
-    # Merge all districts into one polygon and shrink slightly
-    # to prevent pixel bleeding at the boundary edge
-    merged = unary_union(accra_shapes).buffer(-0.001)
+    merged = unary_union(accra_shapes)
 
     with rasterio.open(src_path) as src:
         out_image, out_transform = rio_mask(
@@ -190,7 +180,7 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
             [mapping(merged)],
             crop=True,
             nodata=np.nan,
-            all_touched=False,
+            all_touched=True,
         )
         out_meta = src.meta.copy()
         out_meta.update({
@@ -219,7 +209,7 @@ def write_cog(src_path: str, dst_path: str) -> None:
     }
     with rasterio.open(src_path) as src:
         with MemoryFile() as memfile:
-            with memfile.open(**src.profile) as mem:
+            with memfile.open(**{**src.profile, "tiled": True, "blockxsize": 512, "blockysize": 512}) as mem:
                 mem.write(src.read())
                 mem.build_overviews([2, 4, 8, 16, 32], Resampling.average)
                 mem.update_tags(ns="rio_overview", resampling="average")
