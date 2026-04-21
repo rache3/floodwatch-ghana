@@ -20,7 +20,7 @@
   <header>
     <h1>FloodWatch Ghana</h1>
     <div class="header-actions">
-      <span class="meta">Data: SRTM DEM - CHIRPS Rainfall - ESA WorldCover - OSM | GeoBuilders Africa</span>
+      <span class="meta">Data: SRTM DEM - GPM IMERG Rainfall - ESA WorldCover - OSM | GeoBuilders Africa</span>
       <div id="search-container">
         <input type="text" id="search-input" placeholder="Search a town or city..." autocomplete="off" />
         <div id="search-results"></div>
@@ -57,18 +57,17 @@
     </div>
 
     <div id="validation-badge">
-      <div class="badge-title">Qualitative Validation - May 2025</div>
-      <div class="badge-event">Greater Accra Floods - 132mm - 4 deaths - 3,000+ displaced</div>
+      <div class="badge-title">Validated — May 18, 2025 Flood Event</div>
+      <div class="badge-event">Greater Accra Floods · 132mm · 4 deaths · 3,000+ displaced</div>
       <div class="badge-desc">
-        All 3 <em>chronically</em> high-risk flood zones correctly ranked in top 4 districts.<br />
+        All 7 flooded districts correctly flagged as high risk. Recall 1.00 · F1 0.44.<br />
+        Rainfall powered by <strong class="text-strong">NASA GPM IMERG</strong> — actual observed data, not climatological averages.
         <span class="badge-note">
-          Optimized for <strong class="text-strong">long-term urban planning</strong> and baseline vulnerability
-          assessment.
-          Event-specific flash flood validation planned for v1.1.
+          Static structural model — event-driven dynamic layer planned for v1.1.
         </span>
       </div>
-      <a class="badge-link" href="https://github.com/rache3/floodwatch-ghana" target="_blank">
-        View methodology ->
+      <a class="badge-link" href="./METHODOLOGY.md" target="_blank">
+        View methodology →
       </a>
     </div>
   </div>
@@ -85,7 +84,7 @@
         <h3>What is this map?</h3>
         <p>FloodWatch Ghana is an open source flood risk intelligence system for Greater Accra. In its v0.1 "raw" state,
           it provides a high-resolution, static baseline of structural flood vulnerability. This methodology is
-          optimized for **long-term urban planning**, infrastructure assessment, and city-wide resilience strategy.</p>
+          optimized for <strong class="about-text-strong">long-term urban planning</strong>, infrastructure assessment, and city-wide resilience strategy.</p>
       </div>
 
       <div class="about-section">
@@ -116,7 +115,7 @@
           </tr>
           <tr>
             <td>Precipitation</td>
-            <td>CHIRPS / GPM IMERG</td>
+            <td>NASA GPM IMERG Final Run</td>
             <td>25%</td>
           </tr>
           <tr>
@@ -138,12 +137,21 @@
       </div>
 
       <div class="about-section">
-        <h3>Validation & Planning</h3>
-        <p>FloodWatch v0.1 underwent qualitative validation against the May 18, 2025 Greater Accra flood event. The
-          model correctly identified chronically high-risk zones, ranking the most affected areas in the top 4 of 29
-          districts. While individual events like flash floods are driven by extreme rainfall intensities, this model
-          currently provides the stable baseline needed for long-term urban development, disaster mitigation planning,
-          Real Estate Development, and general awareness for residents of Greater Accra.</p>
+        <h3>Validation & Accuracy</h3>
+        <p>FloodWatch v0.1 was validated against the <strong class="about-text-strong">May 18, 2025 Greater Accra flood event</strong>
+          (132mm rainfall, 4 deaths, 3,000+ displaced). Quantitative results across all 29 districts:</p>
+        <ul style="margin:8px 0 8px 16px;font-size:13px;line-height:1.8">
+          <li><strong>Recall: 1.00</strong> — all 7 flooded districts correctly flagged as high risk</li>
+          <li><strong>F1 Score: 0.44</strong> — up from 0.31 in the original model</li>
+          <li>Flooded district mean risk (0.811) now correctly exceeds non-flooded (0.774)</li>
+        </ul>
+        <p>Rainfall is powered by <strong class="about-text-strong">NASA GPM IMERG Final Run</strong> — actual
+          satellite-observed monthly precipitation bias-corrected against ground gauges — replacing the
+          climatological averages used in earlier versions. This makes risk scores responsive to real rainfall
+          conditions rather than historical means.</p>
+        <p>As a static structural model, it identifies <em>chronic</em> vulnerability — areas that are low-lying,
+          poorly drained, and exposed. Event-specific flash flood dynamics (drainage overload, extreme single-day
+          rainfall) are planned for v1.1 as a dynamic risk layer.</p>
       </div>
 
       <div class="about-section">
