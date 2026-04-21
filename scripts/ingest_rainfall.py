@@ -353,7 +353,7 @@ def _parse_gpm_hdf5(hdf5_path: str, days_in_month: int) -> np.ndarray:
     """
     try:
         import h5py
-    except Exception as e:
+    except Exception:
         log.warning("h5py not installed — run: pip install h5py")
         return None
 
@@ -404,7 +404,7 @@ def download_era5(year: int, month: int) -> bool:
     """
     try:
         import cdsapi
-    except Exception as e:
+    except Exception:
         log.warning("cdsapi not installed — skipping ERA5")
         return False
 
@@ -624,7 +624,7 @@ def main():
     try:
         import h5py  # noqa: F401
         log.info("h5py available ✓ — GPM IMERG enabled")
-    except Exception as e:
+    except Exception:
         log.warning("h5py not installed — GPM IMERG disabled")
         log.warning("Run: pip install h5py")
 
