@@ -96,10 +96,10 @@ EARTHDATA_PASS = os.getenv("EARTHDATA_PASS", "")
 
 # Greater Accra bounding box
 BBOX = {
-    "west":  float(os.getenv("BBOX_WEST",  "-0.50")),
-    "east":  float(os.getenv("BBOX_EAST",   "0.50")),
+    "west":  float(os.getenv("BBOX_WEST",  "-0.60")),
+    "east":  float(os.getenv("BBOX_EAST",   "0.75")),
     "south": float(os.getenv("BBOX_SOUTH",  "5.35")),
-    "north": float(os.getenv("BBOX_NORTH",  "5.95")),
+    "north": float(os.getenv("BBOX_NORTH",  "6.20")),
 }
 
 

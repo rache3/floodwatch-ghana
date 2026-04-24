@@ -153,6 +153,7 @@ jobs:
               "BBOX_EAST": "0.75",
               "BBOX_SOUTH": "5.35",
               "BBOX_NORTH": "6.20",
+              "RAINFALL_MIN_VALID_PERCENT": "65",
               "WEIGHT_DEM": "0.30",
               "WEIGHT_RAINFALL": "0.25",
               "WEIGHT_SLOPE": "0.20",
