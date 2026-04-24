@@ -8,7 +8,8 @@ authors:
     affiliation: GeoBuilders Africa
     email: atiarachel94@gmail.com
 version: 0.1.0
-date-released: "2026-04-24"
+date-released: "2026-04-25"
+doi: 10.5281/zenodo.19748220
 license: MIT
 repository-code: https://github.com/rache3/floodwatch-ghana
 url: https://floodwatch.geobuildersafrica.com

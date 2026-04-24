@@ -1,7 +1,7 @@
 # FloodWatch Ghana — Flood Risk Intelligence Application
 ### Greater Accra Region
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19748220.svg)](https://doi.org/10.5281/zenodo.19748220)
 
 **Author:** Rachel Atia · GeoBuilders Africa  
 **Version:** v0.1 (Baseline Risk)
@@ -215,7 +215,7 @@ python scripts/validate_flood_risk.py
 
 If you use this software or data in your research, please cite it as:
 
-> Atia, R. (2026). *FloodWatch Ghana: Flood Risk Intelligence for Greater Accra* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.XXXXXXX
+> Atia, R. (2026). *FloodWatch Ghana: Flood Risk Intelligence for Greater Accra* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.19748220
 
 Or use the `CITATION.cff` file in this repository — GitHub will surface a **Cite this repository** button automatically.
 
