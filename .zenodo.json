@@ -1,0 +1,43 @@
+{
+  "title": "FloodWatch Ghana: Flood Risk Intelligence for Greater Accra (v0.1)",
+  "description": "<p>FloodWatch Ghana is an open-source flood risk intelligence system for Greater Accra, built to help planners, emergency responders, and researchers understand which parts of the city are most at risk from flooding — and why.</p><p>The system pulls together five satellite and geospatial datasets — terrain elevation (NASA SRTM), monthly precipitation (NASA GPM IMERG), terrain slope, land cover imperviousness (ESA WorldCover 2021), and proximity to water bodies (OpenStreetMap) — normalises them, and combines them into a single composite risk score for every 30-metre pixel across the region. The output is published as a live interactive web map that updates monthly as new rainfall data arrives from NASA's GPM satellite.</p><p>Version 0.1 was validated against the May 18, 2025 Greater Accra flood event — 132mm of rainfall in a single day, 4 deaths, and over 3,000 people displaced. All 7 districts that flooded were correctly identified as high risk by the model (Recall: 1.00, F1: 0.44).</p><p>This archive contains the full data processing pipeline (Python), the risk model, the frontend web map (HTML/CSS/JS), validation results, and methodology documentation. Greater Accra is the pilot — the pipeline is designed to scale to other regions of Ghana and West Africa.</p>",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "language": "eng",
+  "version": "0.1.0",
+  "creators": [
+    {
+      "name": "Atia, Rachel",
+      "affiliation": "GeoBuilders Africa"
+    }
+  ],
+  "keywords": [
+    "flood risk",
+    "urban flooding",
+    "Greater Accra",
+    "Ghana",
+    "West Africa",
+    "geospatial analysis",
+    "remote sensing",
+    "NASA GPM IMERG",
+    "NASA SRTM",
+    "ESA WorldCover",
+    "disaster risk reduction",
+    "cloud-optimised GeoTIFF",
+    "Python",
+    "flood mapping"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/rache3/floodwatch-ghana",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://floodwatch.geobuildersafrica.com",
+      "relation": "isDocumentedBy",
+      "scheme": "url"
+    }
+  ]
+}
