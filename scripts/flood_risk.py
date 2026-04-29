@@ -137,7 +137,15 @@ def normalise(arr, invert=False):
 
 
 def validate_layer_coverage(layers, reference_mask):
-    """Fail fast if any aligned input layer has gaps over valid DEM pixels."""
+    """Warn or fail if aligned input layers have gaps over valid DEM pixels.
+
+    A tolerance of (100 - RAINFALL_MIN_VALID_PERCENT)% is allowed to account
+    for ocean/coastal pixels where sources like CHIRPS have no data.
+    Gaps beyond that threshold indicate a broken source raster.
+    """
+    min_valid = float(os.getenv("RAINFALL_MIN_VALID_PERCENT", "65"))
+    max_missing_pct = 100.0 - min_valid  # e.g. 35% allowed missing
+
     bad_layers = []
     total_reference = int(np.sum(reference_mask))
 
@@ -146,7 +154,13 @@ def validate_layer_coverage(layers, reference_mask):
         missing_count = int(np.sum(missing))
         if missing_count:
             missing_pct = 100.0 * missing_count / total_reference
-            bad_layers.append((name, missing_pct, missing_count))
+            if missing_pct > max_missing_pct:
+                bad_layers.append((name, missing_pct, missing_count))
+            else:
+                log.warning(
+                    "%s has %.2f%% nodata over DEM grid (within coastal tolerance of %.0f%%)",
+                    name, missing_pct, max_missing_pct,
+                )
 
     if bad_layers:
         details = ", ".join(

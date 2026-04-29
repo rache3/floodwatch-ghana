@@ -1,7 +1,7 @@
 # FloodWatch Ghana — Flood Risk Intelligence Application
 ### Greater Accra Region
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19748220.svg)](https://doi.org/10.5281/zenodo.19748220)
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19748220.svg)](https://doi.org/10.5281/zenodo.19748220)
 
 **Author:** Rachel Atia · GeoBuilders Africa  
 **Version:** v0.1 (Baseline Risk)
