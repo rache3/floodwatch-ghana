@@ -614,6 +614,23 @@ def accept_candidate(candidate_path: str, source: str, year: int, month: int) ->
     return True
 
 
+def _try_sources(year: int, month: int) -> bool:
+    """Try every configured source for the given year/month. Returns True on first success."""
+    if RAINFALL_SOURCE in ("auto", "gpm_final", "gpm"):
+        if download_gpm_final(year, month):
+            return True
+    if RAINFALL_SOURCE in ("auto", "gpm_late", "gpm"):
+        if download_gpm_late(year, month):
+            return True
+    if RAINFALL_SOURCE in ("auto", "era5"):
+        if download_era5(year, month):
+            return True
+    if RAINFALL_SOURCE in ("auto", "chirps"):
+        if download_chirps(year, month):
+            return True
+    return False
+
+
 def main():
     log.info("=== Rainfall Ingest — Year=%d Month=%02d ===", YEAR, MONTH)
     log.info("Priority: GPM Final → GPM Late → ERA5 → CHIRPS")
@@ -639,22 +656,29 @@ def main():
         log.warning("Existing rainfall raster failed validation â€” rebuilding")
         os.remove(OUTPUT_PATH)
 
-    success = False
-
-    if RAINFALL_SOURCE in ("auto", "gpm_final", "gpm"):
-        success = download_gpm_final(YEAR, MONTH)
-
-    if not success and RAINFALL_SOURCE in ("auto", "gpm_late", "gpm"):
-        success = download_gpm_late(YEAR, MONTH)
-
-    if not success and RAINFALL_SOURCE in ("auto", "era5"):
-        success = download_era5(YEAR, MONTH)
-
-    if not success and RAINFALL_SOURCE in ("auto", "chirps"):
-        success = download_chirps(YEAR, MONTH)
+    success = _try_sources(YEAR, MONTH)
 
     if not success:
-        log.error("All rainfall sources failed.")
+        # Current month's data may not be published yet — walk back up to 4 months
+        for months_back in range(1, 5):
+            fb_month = MONTH - months_back
+            if fb_month < 1:
+                fb_year = YEAR - 1
+                fb_month = 12 + fb_month
+            else:
+                fb_year = YEAR
+            log.warning(
+                "No data for %d-%02d — trying %d-%02d as fallback",
+                YEAR, MONTH, fb_year, fb_month,
+            )
+            success = _try_sources(fb_year, fb_month)
+            if success:
+                log.info("Using %d-%02d rainfall (fallback, %d month(s) back)",
+                         fb_year, fb_month, months_back)
+                break
+
+    if not success:
+        log.error("All rainfall sources failed for %d-%02d and the 4 prior months.", YEAR, MONTH)
         log.error("1. Register at https://urs.earthdata.nasa.gov — set EARTHDATA_USER/PASS in .env")
         log.error("2. Run: pip install h5py")
         log.error("3. Or place accra_rainfall.tif manually in %s/", DATA_DIR)
