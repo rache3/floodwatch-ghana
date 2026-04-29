@@ -82,6 +82,7 @@ log = logging.getLogger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 DATA_DIR    = os.getenv("DATA_DIR", "data")
 OUTPUT_PATH = os.path.join(DATA_DIR, "accra_rainfall.tif")
+MIN_VALID_PERCENT = float(os.getenv("RAINFALL_MIN_VALID_PERCENT", "95"))
 
 YEAR  = int(os.getenv("RAINFALL_YEAR",  "2024"))
 MONTH = int(os.getenv("RAINFALL_MONTH", "6"))
@@ -95,10 +96,10 @@ EARTHDATA_PASS = os.getenv("EARTHDATA_PASS", "")
 
 # Greater Accra bounding box
 BBOX = {
-    "west":  float(os.getenv("BBOX_WEST",  "-0.50")),
-    "east":  float(os.getenv("BBOX_EAST",   "0.50")),
+    "west":  float(os.getenv("BBOX_WEST",  "-0.60")),
+    "east":  float(os.getenv("BBOX_EAST",   "0.75")),
     "south": float(os.getenv("BBOX_SOUTH",  "5.35")),
-    "north": float(os.getenv("BBOX_NORTH",  "5.95")),
+    "north": float(os.getenv("BBOX_NORTH",  "6.20")),
 }
 
 
@@ -124,6 +125,16 @@ def build_earthdata_opener() -> urllib.request.OpenerDirector:
     return urllib.request.build_opener(auth_handler, cookie_handler)
 
 
+def looks_like_html(path: str) -> bool:
+    """Detect login/error pages downloaded in place of data files."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(512).lstrip().lower()
+    except OSError:
+        return False
+    return head.startswith(b"<!doctype html") or head.startswith(b"<html")
+
+
 def write_raster(data: np.ndarray, output_path: str,
                  source: str, year: int, month: int) -> None:
     """Write rainfall array as GeoTIFF over Greater Accra bounding box."""
@@ -131,6 +142,10 @@ def write_raster(data: np.ndarray, output_path: str,
     from rasterio.transform import from_bounds
 
     rows, cols = data.shape
+    nodata = -9999.0
+    data = data.astype(np.float32, copy=True)
+    data[~np.isfinite(data)] = nodata
+    data[data < 0] = nodata
     transform  = from_bounds(
         BBOX["west"], BBOX["south"],
         BBOX["east"], BBOX["north"],
@@ -148,8 +163,9 @@ def write_raster(data: np.ndarray, output_path: str,
         crs="EPSG:4326",
         transform=transform,
         compress="deflate",
+        nodata=nodata,
     ) as dst:
-        dst.write(data.astype(np.float32), 1)
+        dst.write(data, 1)
         dst.update_tags(
             description="Monthly total precipitation — Greater Accra",
             source=source,
@@ -230,14 +246,20 @@ def download_gpm_final(year: int, month: int) -> bool:
         urllib.request.urlretrieve(url, tmp)
         log.info("Downloaded %.1f MB", os.path.getsize(tmp) / 1024 / 1024)
 
+        if looks_like_html(tmp):
+            log.warning("GPM Final Run returned an Earthdata login/error page instead of HDF5")
+            os.remove(tmp)
+            return False
+
         data = _parse_gpm_hdf5(tmp, days)
         os.remove(tmp)
 
         if data is None:
             return False
 
-        write_raster(data, OUTPUT_PATH, "GPM IMERG Final Run V07B", year, month)
-        return True
+        candidate_path = os.path.join(DATA_DIR, "accra_rainfall_gpm_final.tif")
+        write_raster(data, candidate_path, "GPM IMERG Final Run V07B", year, month)
+        return accept_candidate(candidate_path, "GPM IMERG Final Run V07B", year, month)
 
     except urllib.error.HTTPError as e:
         log.warning("GPM Final Run HTTP %s: %s", e.code, e.reason)
@@ -286,14 +308,20 @@ def download_gpm_late(year: int, month: int) -> bool:
         urllib.request.urlretrieve(url, tmp)
         log.info("Downloaded %.1f MB", os.path.getsize(tmp) / 1024 / 1024)
 
+        if looks_like_html(tmp):
+            log.warning("GPM Late Run returned an Earthdata login/error page instead of HDF5")
+            os.remove(tmp)
+            return False
+
         data = _parse_gpm_hdf5(tmp, days)
         os.remove(tmp)
 
         if data is None:
             return False
 
-        write_raster(data, OUTPUT_PATH, "GPM IMERG Late Run V07B", year, month)
-        return True
+        candidate_path = os.path.join(DATA_DIR, "accra_rainfall_gpm_late.tif")
+        write_raster(data, candidate_path, "GPM IMERG Late Run V07B", year, month)
+        return accept_candidate(candidate_path, "GPM IMERG Late Run V07B", year, month)
 
     except urllib.error.HTTPError as e:
         log.warning("GPM Late Run HTTP %s: %s", e.code, e.reason)
@@ -325,7 +353,7 @@ def _parse_gpm_hdf5(hdf5_path: str, days_in_month: int) -> np.ndarray:
     """
     try:
         import h5py
-    except ImportError:
+    except Exception:
         log.warning("h5py not installed — run: pip install h5py")
         return None
 
@@ -376,7 +404,7 @@ def download_era5(year: int, month: int) -> bool:
     """
     try:
         import cdsapi
-    except ImportError:
+    except Exception:
         log.warning("cdsapi not installed — skipping ERA5")
         return False
 
@@ -409,12 +437,13 @@ def download_era5(year: int, month: int) -> bool:
             tmp_nc,
         )
 
-        _nc_to_tiff(tmp_nc, OUTPUT_PATH,
+        candidate_path = os.path.join(DATA_DIR, "accra_rainfall_era5.tif")
+        _nc_to_tiff(tmp_nc, candidate_path,
                     scale=hours_in_month * 1000,
                     source="ERA5-Land", year=year, month=month)
         os.remove(tmp_nc)
         log.info("ERA5 downloaded ✓")
-        return True
+        return accept_candidate(candidate_path, "ERA5-Land", year, month)
 
     except Exception as e:
         log.warning("ERA5 failed: %s", e)
@@ -486,11 +515,12 @@ def download_chirps(year: int, month: int) -> bool:
                 f_out.write(f_in.read())
         os.remove(tmp_gz)
 
-        _clip_tif(tmp_tif, OUTPUT_PATH,
+        candidate_path = os.path.join(DATA_DIR, "accra_rainfall_chirps.tif")
+        _clip_tif(tmp_tif, candidate_path,
                   source="CHIRPS v2.0", year=year, month=month)
         os.remove(tmp_tif)
         log.info("CHIRPS downloaded ✓")
-        return True
+        return accept_candidate(candidate_path, "CHIRPS v2.0", year, month)
 
     except Exception as e:
         log.error("CHIRPS failed: %s", e)
@@ -532,6 +562,75 @@ def _clip_tif(src_path: str, dst_path: str,
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def rainfall_metrics(output_path: str) -> dict:
+    """Read rainfall file metrics used for source acceptance checks."""
+    import rasterio
+
+    with rasterio.open(output_path) as src:
+        data = src.read(1).astype(float)
+        nodata = src.nodata
+        tags = src.tags()
+        if nodata is not None:
+            data[data == nodata] = float("nan")
+        data[data < 0] = float("nan")
+
+    valid = data[~np.isnan(data)]
+    if len(valid) == 0:
+        return {
+            "source": tags.get("source", "unknown"),
+            "valid_count": 0,
+            "valid_percent": 0.0,
+        }
+
+    return {
+        "source": tags.get("source", "unknown"),
+        "valid_count": int(len(valid)),
+        "valid_percent": float(100 * len(valid) / data.size),
+    }
+
+
+def accept_candidate(candidate_path: str, source: str, year: int, month: int) -> bool:
+    """Validate a candidate rainfall raster and promote it if acceptable."""
+    if not os.path.exists(candidate_path):
+        return False
+
+    validate(candidate_path)
+    metrics = rainfall_metrics(candidate_path)
+
+    if metrics["valid_count"] == 0 or metrics["valid_percent"] < MIN_VALID_PERCENT:
+        log.warning(
+            "Rejecting %s rainfall candidate for %d-%02d: valid coverage %.1f%% < %.1f%%",
+            source,
+            year,
+            month,
+            metrics["valid_percent"],
+            MIN_VALID_PERCENT,
+        )
+        os.remove(candidate_path)
+        return False
+
+    os.replace(candidate_path, OUTPUT_PATH)
+    log.info("Accepted %s rainfall for %d-%02d", source, year, month)
+    return True
+
+
+def _try_sources(year: int, month: int) -> bool:
+    """Try every configured source for the given year/month. Returns True on first success."""
+    if RAINFALL_SOURCE in ("auto", "gpm_final", "gpm"):
+        if download_gpm_final(year, month):
+            return True
+    if RAINFALL_SOURCE in ("auto", "gpm_late", "gpm"):
+        if download_gpm_late(year, month):
+            return True
+    if RAINFALL_SOURCE in ("auto", "era5"):
+        if download_era5(year, month):
+            return True
+    if RAINFALL_SOURCE in ("auto", "chirps"):
+        if download_chirps(year, month):
+            return True
+    return False
+
+
 def main():
     log.info("=== Rainfall Ingest — Year=%d Month=%02d ===", YEAR, MONTH)
     log.info("Priority: GPM Final → GPM Late → ERA5 → CHIRPS")
@@ -542,33 +641,44 @@ def main():
     try:
         import h5py  # noqa: F401
         log.info("h5py available ✓ — GPM IMERG enabled")
-    except ImportError:
+    except Exception:
         log.warning("h5py not installed — GPM IMERG disabled")
         log.warning("Run: pip install h5py")
 
-    # Skip if already exists
+    # Reuse only if the existing rainfall raster still passes coverage checks
     if os.path.exists(OUTPUT_PATH):
         log.info("Rainfall already exists → %s", OUTPUT_PATH)
-        log.info("Delete to force re-download")
         validate(OUTPUT_PATH)
-        return
+        metrics = rainfall_metrics(OUTPUT_PATH)
+        if metrics["valid_count"] > 0 and metrics["valid_percent"] >= MIN_VALID_PERCENT:
+            log.info("Existing rainfall raster is valid â€” keeping it")
+            return
+        log.warning("Existing rainfall raster failed validation â€” rebuilding")
+        os.remove(OUTPUT_PATH)
 
-    success = False
-
-    if RAINFALL_SOURCE in ("auto", "gpm_final", "gpm"):
-        success = download_gpm_final(YEAR, MONTH)
-
-    if not success and RAINFALL_SOURCE in ("auto", "gpm_late", "gpm"):
-        success = download_gpm_late(YEAR, MONTH)
-
-    if not success and RAINFALL_SOURCE in ("auto", "era5"):
-        success = download_era5(YEAR, MONTH)
-
-    if not success and RAINFALL_SOURCE in ("auto", "chirps"):
-        success = download_chirps(YEAR, MONTH)
+    success = _try_sources(YEAR, MONTH)
 
     if not success:
-        log.error("All rainfall sources failed.")
+        # Current month's data may not be published yet — walk back up to 4 months
+        for months_back in range(1, 5):
+            fb_month = MONTH - months_back
+            if fb_month < 1:
+                fb_year = YEAR - 1
+                fb_month = 12 + fb_month
+            else:
+                fb_year = YEAR
+            log.warning(
+                "No data for %d-%02d — trying %d-%02d as fallback",
+                YEAR, MONTH, fb_year, fb_month,
+            )
+            success = _try_sources(fb_year, fb_month)
+            if success:
+                log.info("Using %d-%02d rainfall (fallback, %d month(s) back)",
+                         fb_year, fb_month, months_back)
+                break
+
+    if not success:
+        log.error("All rainfall sources failed for %d-%02d and the 4 prior months.", YEAR, MONTH)
         log.error("1. Register at https://urs.earthdata.nasa.gov — set EARTHDATA_USER/PASS in .env")
         log.error("2. Run: pip install h5py")
         log.error("3. Or place accra_rainfall.tif manually in %s/", DATA_DIR)

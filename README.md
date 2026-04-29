@@ -1,6 +1,8 @@
 # FloodWatch Ghana — Flood Risk Intelligence Application
 ### Greater Accra Region
 
+[![DOI](https://zenodo.org/badge/doi/10.5281/zenodo.19748220.svg)](https://doi.org/10.5281/zenodo.19748220)
+
 **Author:** Rachel Atia · GeoBuilders Africa  
 **Version:** v0.1 (Baseline Risk)
 **Live map:** https://floodwatch.geobuildersafrica.com  
@@ -31,33 +33,22 @@ Greater Accra is the pilot region. The pipeline is designed to scale across all 
 
 ## Validation
 
-FloodWatch Ghana v0.1 underwent **qualitative validation** against the **May 18, 2025 Greater Accra flood event** — 132.20mm of rainfall, 4 deaths, 3,000+ displaced.
+FloodWatch Ghana v0.1 was validated against the **May 18, 2025 Greater Accra flood event** — 132mm of rainfall, 4 deaths, 3,000+ displaced. Flooded districts were sourced from The Watchers, GDACS, and Copernicus EMS.
 
-Full Methodology & District Leaderboard: [docs/METHODOLOGY.md](./docs/METHODOLOGY.md)
+**Result: Recall 1.00 · F1 0.44 · All 7 flooded districts correctly flagged as high risk**
 
-Qualitative validation compares the model's district-level risk rankings against documented flood locations from news reports and official sources. It does not use satellite-derived flood extent maps — that quantitative validation is planned for v1.1 using Sentinel-1 SAR imagery via Google Earth Engine.
+| Metric | Value |
+|---|---|
+| Flooded districts mean risk | 0.811 |
+| Non-flooded districts mean risk | 0.774 |
+| Flooded districts flagged high risk (≥0.70) | 7 of 7 (100%) |
+| Recall | 1.00 |
+| Precision | 0.28 |
+| F1 Score | 0.44 |
 
-**Result: MODERATE ✓**
+The 7 flooded districts — Weija Gbawe, Accra Metropolis, Ga East, Tema, Tema West, La-Nkwantanang-Madina, Adenta — all scored above 0.70. The low precision (18 of 22 non-flooded districts also score high) reflects a known limitation of static structural models applied to a region where most urban districts share similar coastal, low-lying terrain. Improving precision requires dynamic, event-driven inputs — planned for v1.1.
 
-Flooded districts mean risk score: **0.5983** vs non-flooded: **0.5874** (+0.0109)
-
-All 3 chronically high-risk flood zones correctly ranked in the top 4 districts. The 4 districts that were missed (Adenta, La-Nkwantanang-Madina, Tema, TemaWest) experienced flash flooding driven by extreme rainfall (132mm) — a separate risk category not captured by the static structural model. This is an expected limitation of v0.1 and informs the roadmap for v1.1.
-
-| District | Rank | Percentile | Flooded May 2025 |
-|---|---|---|---|
-| WeijaGbawe | 2 of 29 | top 93% | 🔴 YES |
-| GaCentral (Kaneshie) | 3 of 29 | top 90% | 🔴 YES |
-| Accra (Adabraka) | 4 of 29 | top 86% | 🔴 YES |
-| Tema | 20 of 29 | top 31% | 🔴 YES |
-| TemaWest | 21 of 29 | top 28% | 🔴 YES |
-| La-Nkwantanang-Madina (Oyarifa/Abokobi) | 24 of 29 | top 17% | 🔴 YES |
-| Adenta | 25 of 29 | top 14% | 🔴 YES |
-
-**Flooded districts mean risk: 0.5983 vs non-flooded: 0.5874**
-
-3 of 7 flooded districts ranked in the top 4 risk zones. Districts that ranked lower but flooded (Adenta, La-Nkwantanang-Madina) experienced **flash flooding** driven by extreme rainfall rather than chronic structural vulnerability — a known limitation of the current static model.
-
-Full Methodology & District Leaderboard: [docs/METHODOLOGY.md](./docs/METHODOLOGY.md)
+Full Methodology & District Leaderboard: [floodwatch.geobuildersafrica.com/METHODOLOGY.html](https://floodwatch.geobuildersafrica.com/METHODOLOGY.html)
 
 ---
 
@@ -149,7 +140,8 @@ floodwatch-ghana/
 │   └── outputs.tf
 ├── docs/
 │   ├── index.html         # MapLibre GL JS web map
-│   └── METHODOLOGY.md     # Risk model methodology & scorecard
+│   ├── METHODOLOGY.html   # Risk model methodology & validation (rendered)
+│   └── METHODOLOGY.md     # Risk model methodology & validation (source)
 ├── output/
 │   └── validation_may2025.json # Validation results
 ├── data/
@@ -211,11 +203,21 @@ python scripts/validate_flood_risk.py
 
 ## Known limitations
 
-- **Validation is qualitative** — district risk rankings compared against news-reported flood locations. Quantitative validation using Sentinel-1 SAR flood extent maps is planned for v1.1
+- **No pixel-level validation** — validation is at the district mean level against reported flood locations. Quantitative spatial validation using Sentinel-1 SAR flood extent maps is planned for v1.1
 - Static risk model captures chronic structural vulnerability — not event-driven flash flooding
 - Districts like Adenta and La-Nkwantanang-Madina may flood under extreme rainfall events not predicted by the static model
 - Real-time rainfall thresholds via GPM IMERG Late Run are planned for v1.1
 - Greater Accra pilot only — expansion to other Ghana regions in progress
+
+---
+
+## Citation
+
+If you use this software or data in your research, please cite it as:
+
+> Atia, R. (2026). *FloodWatch Ghana: Flood Risk Intelligence for Greater Accra* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.19748220
+
+Or use the `CITATION.cff` file in this repository — GitHub will surface a **Cite this repository** button automatically.
 
 ---
 

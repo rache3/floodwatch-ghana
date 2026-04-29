@@ -134,18 +134,47 @@ def normalise(arr, invert=False):
         return np.zeros_like(arr, dtype=np.float32)
     norm = (arr - a_min) / (a_max - a_min)
     return (1.0 - norm).astype(np.float32) if invert else norm.astype(np.float32)
- 
+
+
+def validate_layer_coverage(layers, reference_mask):
+    """Warn or fail if aligned input layers have gaps over valid DEM pixels.
+
+    A tolerance of (100 - RAINFALL_MIN_VALID_PERCENT)% is allowed to account
+    for ocean/coastal pixels where sources like CHIRPS have no data.
+    Gaps beyond that threshold indicate a broken source raster.
+    """
+    min_valid = float(os.getenv("RAINFALL_MIN_VALID_PERCENT", "65"))
+    max_missing_pct = 100.0 - min_valid  # e.g. 35% allowed missing
+
+    bad_layers = []
+    total_reference = int(np.sum(reference_mask))
+
+    for name, arr in layers.items():
+        missing = reference_mask & ~np.isfinite(arr)
+        missing_count = int(np.sum(missing))
+        if missing_count:
+            missing_pct = 100.0 * missing_count / total_reference
+            if missing_pct > max_missing_pct:
+                bad_layers.append((name, missing_pct, missing_count))
+            else:
+                log.warning(
+                    "%s has %.2f%% nodata over DEM grid (within coastal tolerance of %.0f%%)",
+                    name, missing_pct, max_missing_pct,
+                )
+
+    if bad_layers:
+        details = ", ".join(
+            f"{name} missing {pct:.2f}% ({count:,} pixels)"
+            for name, pct, count in bad_layers
+        )
+        raise ValueError(
+            "Aligned input layers do not fully cover the DEM grid: "
+            f"{details}. Rebuild the source rasters before computing risk."
+        )
+
 
 def mask_to_boundary(src_path: str, dst_path: str) -> None:
-    """
-    Clip raster to Greater Accra district boundary.
-
-    Uses Shapely buffer(-0.001) to shrink the boundary slightly,
-    eliminating pixel bleeding at tile edges — a known issue with
-    TiTiler serving COGs that extend right to the boundary edge.
-
-    Falls back to copying the file unchanged if no boundary file is found.
-    """
+    """Clip raster to Greater Accra district boundary. Falls back to copying the file unchanged if no boundary file is found."""
     from rasterio.mask import mask as rio_mask
     from shapely.geometry import shape, mapping
     from shapely.ops import unary_union
@@ -180,24 +209,26 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
 
     log.info("Masking to %d district polygons...", len(accra_shapes))
 
-    # Merge all districts into one polygon and shrink slightly
-    # to prevent pixel bleeding at the boundary edge
-    merged = unary_union(accra_shapes).buffer(-0.001)
+    merged = unary_union(accra_shapes)
+
+    NODATA = -9999.0
 
     with rasterio.open(src_path) as src:
         out_image, out_transform = rio_mask(
             src,
             [mapping(merged)],
             crop=True,
-            nodata=np.nan,
-            all_touched=False,
+            nodata=NODATA,
+            all_touched=True,
         )
+        # Replace any remaining NaN within boundary with sentinel
+        out_image[np.isnan(out_image)] = NODATA
         out_meta = src.meta.copy()
         out_meta.update({
             "height":    out_image.shape[1],
             "width":     out_image.shape[2],
             "transform": out_transform,
-            "nodata":    np.nan,
+            "nodata":    NODATA,
             "dtype":     "float32",
         })
         with rasterio.open(dst_path, "w", **out_meta) as dst:
@@ -208,6 +239,9 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
 
 def write_cog(src_path: str, dst_path: str) -> None:
     """Convert GeoTIFF to Cloud-Optimised GeoTIFF for TiTiler."""
+    with rasterio.open(src_path) as src:
+        src_nodata = src.nodata
+
     copy_opts = {
         "driver":            "GTiff",
         "tiled":             True,
@@ -216,10 +250,11 @@ def write_cog(src_path: str, dst_path: str) -> None:
         "compress":          "deflate",
         "predictor":         3,
         "copy_src_overviews": True,
+        "nodata":            src_nodata,
     }
     with rasterio.open(src_path) as src:
         with MemoryFile() as memfile:
-            with memfile.open(**src.profile) as mem:
+            with memfile.open(**{**src.profile, "tiled": True, "blockxsize": 512, "blockysize": 512}) as mem:
                 mem.write(src.read())
                 mem.build_overviews([2, 4, 8, 16, 32], Resampling.average)
                 mem.update_tags(ns="rio_overview", resampling="average")
@@ -281,6 +316,17 @@ def run():
     slope_norm       = normalise(slope_raw,       invert=True)   # flat = high risk
     landcover_norm   = normalise(landcover_raw,   invert=False)  # impervious = high risk
     waterbodies_norm = normalise(waterbodies_raw, invert=True)   # close to water = high risk
+
+    reference_valid = np.isfinite(dem_raw)
+    validate_layer_coverage(
+        {
+            "rainfall": rainfall_norm,
+            "slope": slope_norm,
+            "landcover": landcover_norm,
+            "waterbodies": waterbodies_norm,
+        },
+        reference_valid,
+    )
 
     # 4. Weighted composite score
     log.info("Computing weighted flood risk score...")

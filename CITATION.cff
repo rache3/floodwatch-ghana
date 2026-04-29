@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+title: "FloodWatch Ghana: Flood Risk Intelligence for Greater Accra"
+message: "If you use this software or data in your work, please cite it using the metadata below."
+type: software
+authors:
+  - family-names: Atia
+    given-names: Rachel
+    affiliation: GeoBuilders Africa
+    email: atiarachel94@gmail.com
+version: 0.1.0
+date-released: "2026-04-25"
+doi: 10.5281/zenodo.19748220
+license: MIT
+repository-code: https://github.com/rache3/floodwatch-ghana
+url: https://floodwatch.geobuildersafrica.com
+abstract: >
+  FloodWatch Ghana is an open-source flood risk intelligence system for Greater Accra, Ghana.
+  It combines five satellite and geospatial datasets — terrain elevation, monthly precipitation,
+  slope, land cover imperviousness, and proximity to water bodies — into a weighted composite
+  flood risk score at 30-metre resolution, served as a monthly-updated interactive web map.
+  Version 0.1 was validated against the May 18, 2025 Greater Accra flood event (132mm rainfall,
+  4 deaths, 3,000+ displaced). All 7 flooded districts were correctly identified as high risk
+  (Recall: 1.00, F1: 0.44).
+keywords:
+  - flood risk
+  - urban flooding
+  - Greater Accra
+  - Ghana
+  - West Africa
+  - geospatial analysis
+  - remote sensing
+  - NASA GPM IMERG
+  - disaster risk reduction

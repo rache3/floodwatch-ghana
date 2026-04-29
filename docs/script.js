@@ -1,13 +1,12 @@
 const TITILER_URL = "https://titiler-z2qegb4nha-uc.a.run.app";
 const R2_PUBLIC = "https://storage.googleapis.com/accra-flood-risk";
-const COG_URL = `${R2_PUBLIC}/rasters/flood_risk_map.cog.tif?v=4`;
+const COG_URL = `${R2_PUBLIC}/rasters/flood_risk_map.cog.tif?v=6`;
 const GEOJSON_URL = "./gadm41_GHA_accra.json";
 
 const TILE_URL = `${TITILER_URL}/cog/tiles/{z}/{x}/{y}` +
   `?url=${encodeURIComponent(COG_URL)}` +
   "&colormap_name=plasma" +
-  "&rescale=0,1" +
-  "&nodata=nan";
+  "&rescale=0,1";
 
 const map = new maplibregl.Map({
   container: "map",
