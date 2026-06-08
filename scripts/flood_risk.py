@@ -25,6 +25,7 @@ import json
 import logging
 import shutil
 import numpy as np
+from scipy.ndimage import gaussian_filter
 import rasterio
 from rasterio.enums import Resampling
 from rasterio.warp import reproject
@@ -126,6 +127,7 @@ def align_to_reference(src_path, ref_profile):
     return dst_arr
 
 
+
 def normalise(arr, invert=False):
     """Min-max normalise to [0, 1] ignoring NaN. Invert if needed."""
     a_min = np.nanmin(arr)
@@ -219,7 +221,8 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
             [mapping(merged)],
             crop=True,
             nodata=NODATA,
-            all_touched=True,
+            all_touched=False,  # Only pixels whose centre falls inside the polygon
+                                 # — avoids bleeding a single ragged edge row at boundary
         )
         # Replace any remaining NaN within boundary with sentinel
         out_image[np.isnan(out_image)] = NODATA
@@ -238,26 +241,41 @@ def mask_to_boundary(src_path: str, dst_path: str) -> None:
 
 
 def write_cog(src_path: str, dst_path: str) -> None:
-    """Convert GeoTIFF to Cloud-Optimised GeoTIFF for TiTiler."""
+    """Convert GeoTIFF to Cloud-Optimised GeoTIFF for TiTiler.
+
+    Overview resampling uses Resampling.nearest — NOT average.
+
+    The risk score has been reclassified into non-linear tiers (0-0.33 / 0.33-0.67 / 0.67-1.0).
+    Averaging pixel values across tier boundaries at lower zoom levels creates a visible
+    intermediate-tone stripe — the "abrupt line" artifact. Nearest-neighbour avoids this
+    by preserving actual classified values rather than blending them.
+    """
     with rasterio.open(src_path) as src:
         src_nodata = src.nodata
 
     copy_opts = {
-        "driver":            "GTiff",
-        "tiled":             True,
-        "blockxsize":        512,
-        "blockysize":        512,
-        "compress":          "deflate",
-        "predictor":         3,
+        "driver":             "GTiff",
+        "tiled":              True,
+        "blockxsize":         256,   # Match frontend tileSize for clean tile boundaries
+        "blockysize":         256,
+        "compress":           "deflate",
+        "predictor":          3,
         "copy_src_overviews": True,
-        "nodata":            src_nodata,
+        "nodata":             src_nodata,
     }
     with rasterio.open(src_path) as src:
         with MemoryFile() as memfile:
-            with memfile.open(**{**src.profile, "tiled": True, "blockxsize": 512, "blockysize": 512}) as mem:
+            with memfile.open(**{
+                **src.profile,
+                "tiled":     True,
+                "blockxsize": 256,
+                "blockysize": 256,
+            }) as mem:
                 mem.write(src.read())
-                mem.build_overviews([2, 4, 8, 16, 32], Resampling.average)
-                mem.update_tags(ns="rio_overview", resampling="average")
+                # Use nearest for overview downsampling — preserves classified tier
+                # values instead of blending across non-linear boundaries
+                mem.build_overviews([2, 4, 8, 16, 32], Resampling.nearest)
+                mem.update_tags(ns="rio_overview", resampling="nearest")
                 rio_copy(mem, dst_path, **copy_opts)
     log.info("COG written → %s", dst_path)
 
@@ -299,6 +317,16 @@ def run():
     # 2. Align all layers to DEM grid
     log.info("Aligning rainfall to DEM grid...")
     rainfall_raw = align_to_reference(RAINFALL_PATH, ref_profile)
+
+    # GPM IMERG is ~10 km resolution (9×13 px over bbox) — 340× upsampling to
+    # 30 m DEM produces blocky tiles. Gaussian-weighted fill smooths the seams.
+    valid_mask = np.isfinite(rainfall_raw)
+    rainfall_smoothed = gaussian_filter(np.where(valid_mask, rainfall_raw, 0.0), sigma=15)
+    weight_mask = gaussian_filter(valid_mask.astype(np.float32), sigma=15)
+    del valid_mask
+    rainfall_raw = np.where(weight_mask > 0, rainfall_smoothed / weight_mask, np.nan).astype(np.float32)
+    del rainfall_smoothed, weight_mask
+    log.info("Rainfall smoothed (sigma=15) to remove GPM tile artifacts")
 
     log.info("Aligning slope to DEM grid...")
     slope_raw = align_to_reference(SLOPE_PATH, ref_profile)
@@ -348,15 +376,29 @@ def run():
     p75 = np.percentile(valid_pixels, 75)
     log.info("Percentiles  p25=%.4f  p75=%.4f", p25, p75)
 
-    risk_classified = np.where(
-        np.isnan(risk), np.nan,
-        np.where(risk < p25, risk / p25 * 0.33,
-        np.where(risk < p75,
-                 0.33 + (risk - p25) / (p75 - p25) * 0.34,
-                 0.67 + (risk - p75) / (np.nanmax(risk) - p75) * 0.33))
-    ).astype(np.float32)
+    risk_max = float(np.nanmax(risk))
+    risk_classified = np.full(risk.shape, np.nan, dtype=np.float32)
+    m_low = ~np.isnan(risk) & (risk < p25)
+    risk_classified[m_low] = (risk[m_low] / p25 * 0.33)
+    m_mid = ~np.isnan(risk) & (risk >= p25) & (risk < p75)
+    risk_classified[m_mid] = (0.33 + (risk[m_mid] - p25) / (p75 - p25) * 0.34)
+    m_high = ~np.isnan(risk) & (risk >= p75)
+    risk_classified[m_high] = (0.67 + (risk[m_high] - p75) / (risk_max - p75) * 0.33)
+    del m_low, m_mid, m_high
 
-    risk = risk_classified
+    # Apply a light Gaussian blur to soften any remaining pixel-level transitions.
+    # sigma=1.0 is subtle — just enough to remove single-pixel hard edges at
+    # tile seams without blurring the meaningful risk boundaries.
+    try:
+        nan_mask = np.isnan(risk_classified)
+        risk_filled = np.where(nan_mask, 0.0, risk_classified)
+        risk_blurred = gaussian_filter(risk_filled, sigma=1.0).astype(np.float32)
+        risk_blurred[nan_mask] = np.nan  # Restore nodata mask
+        risk = risk_blurred
+        log.info("Applied sigma=1.0 Gaussian smoothing to risk surface")
+    except ImportError:
+        log.warning("scipy not available — skipping Gaussian smoothing (pip install scipy)")
+        risk = risk_classified
 
     valid_count = np.sum(~np.isnan(risk))
     log.info("Risk stats  min=%.4f  max=%.4f  mean=%.4f  valid_pixels=%d",
