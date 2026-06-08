@@ -59,7 +59,7 @@ FILES_TO_UPLOAD = {
     os.path.join(OUTPUT_DIR, "flood_risk_map.tif"):     "rasters/flood_risk_map.tif",
 
     # District boundaries — used by the web map frontend
-    os.path.join(DATA_DIR, "gadm41_GHA_2.json"):        "vectors/gadm41_GHA_2.json",
+    os.path.join("docs", "gadm41_GHA_accra.json"):      "vectors/gadm41_GHA_accra.json",
 }
 
 # Content types for each file extension
@@ -69,6 +69,9 @@ CONTENT_TYPES = {
     ".json":    "application/json",
     ".geojson": "application/json",
 }
+
+# Prevent stale map assets from being cached by browsers/CDNs.
+CACHE_CONTROL = "no-store, max-age=0"
 
 
 def get_gcs_client():
@@ -124,6 +127,7 @@ def upload_file(client, local_path: str, gcs_key: str, bucket_name: str) -> bool
         ext = os.path.splitext(local_path)[1].lower()
         content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
         blob.content_type = content_type
+        blob.cache_control = CACHE_CONTROL
 
         # Upload the file
         # Note: public access is managed at bucket level via Uniform Bucket-Level
