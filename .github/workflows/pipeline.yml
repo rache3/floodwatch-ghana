@@ -51,6 +51,7 @@ on:
           - "true"
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PROJECT_ID:  ${{ vars.GCP_PROJECT_ID }}
   REGION:      ${{ vars.GCP_REGION }}
   GCS_BUCKET:  ${{ vars.GCS_BUCKET }}
