@@ -318,6 +318,13 @@ def run():
     log.info("Aligning rainfall to DEM grid...")
     rainfall_raw = align_to_reference(RAINFALL_PATH, ref_profile)
 
+    # Smooth rainfall to remove GPM IMERG tile artifacts (10km → 30m upsampling)
+    from scipy.ndimage import gaussian_filter
+    valid_mask   = np.isfinite(rainfall_raw)
+    smoothed     = gaussian_filter(np.where(valid_mask, rainfall_raw, 0.0), sigma=15)
+    weights      = gaussian_filter(valid_mask.astype(np.float32), sigma=15)
+    rainfall_raw = np.where(weights > 0, smoothed / weights, np.nan).astype(np.float32)
+    log.info("Rainfall smoothed (sigma=15) — GPM tile artifacts removed")
     # GPM IMERG is ~10 km resolution (9×13 px over bbox) — 340× upsampling to
     # 30 m DEM produces blocky tiles. Gaussian-weighted fill smooths the seams.
     valid_mask = np.isfinite(rainfall_raw)
